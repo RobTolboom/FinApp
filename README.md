@@ -70,18 +70,9 @@ docker-compose.yml
 
 ## Samen ontwikkelen
 
-- Werk nooit direct op `main`. Maak een branch (`git switch -c mijn-wijziging`),
-  push die en open een pull request. Een tweede paar ogen kijkt mee voordat het
-  wordt samengevoegd.
-- Houd pull requests klein en beschrijf wat er verandert en waarom.
-- **Commit nooit persoonlijke gegevens**: geen database, geen bankexports, geen
-  IBAN's of namen in code of testbestanden. De `.gitignore` vangt de
-  bekende bestandstypen af, maar controleer het zelf ook bij `git status`.
-- Nieuwe herkenningsregels in `rules.py` moeten algemeen bruikbaar zijn
-  (landelijke winkels, banken, overheidsinstanties). Regels voor je eigen
-  werkgever, familie of lokale zaken stel je in de app zelf in via
-  tegenpartij-regels; die staan in je eigen database.
-- Problemen en ideeën: open een issue in deze repository.
+Zie `CONTRIBUTING.md` voor de werkwijze (branches, pull requests,
+ontwerpprincipes) en vooral de regel dat er nooit persoonlijke gegevens in de
+repository komen. Problemen en ideeën: open een issue.
 
 ## Licentie
 
