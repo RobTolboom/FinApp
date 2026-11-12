@@ -76,4 +76,7 @@ repository komen. Problemen en ideeën: open een issue.
 
 ## Licentie
 
-MIT, zie `LICENSE`.
+FinApp is geen open source; alle rechten zijn voorbehouden aan de
+FinApp-ontwikkelaars, zie `LICENSE`. Het plan is om in de toekomst een
+betaalde gebruikerslicentie aan te bieden waarmee je de app op je eigen
+computer of NAS draait. Wij hosten niets en zien je gegevens nooit.

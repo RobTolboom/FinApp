@@ -1,21 +1,34 @@
-MIT License
+FinApp - Licentie
 
-Copyright (c) 2026 Rob Tolboom
+Copyright (c) 2026 Rob Tolboom en de overige FinApp-ontwikkelaars.
+Alle rechten voorbehouden.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+FinApp is geen open source. Deze software, inclusief broncode, documentatie
+en bijbehorende bestanden, is eigendom van de FinApp-ontwikkelaars. Zonder
+voorafgaande schriftelijke toestemming van de eigenaren is het niet
+toegestaan de software of delen ervan te gebruiken, te kopiëren, te
+wijzigen, te verspreiden, openbaar te maken, te verkopen, te verhuren of in
+sublicentie te geven.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Ontwikkelaars
+  Wie als medewerker toegang heeft tot deze repository mag de software
+  gebruiken, wijzigen en draaien voor eigen gebruik en voor de ontwikkeling
+  van FinApp, binnen de onderlinge afspraken van de FinApp-ontwikkelaars.
+  Bijdragen aan de repository worden gezamenlijk eigendom van de
+  FinApp-ontwikkelaars; zie CONTRIBUTING.md.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Gebruikers
+  Wie een gebruikerslicentie van de FinApp-ontwikkelaars heeft verkregen,
+  mag de software installeren en draaien op eigen apparaten, uitsluitend
+  voor eigen gebruik en onder de voorwaarden van die gebruikerslicentie.
+  Een gebruikerslicentie geeft geen recht om de software of de broncode
+  door te geven, te verkopen, openbaar te maken of als dienst aan anderen
+  aan te bieden.
+
+Geen garantie
+  De software wordt geleverd "zoals deze is", zonder enige garantie,
+  uitdrukkelijk of stilzwijgend, waaronder garanties van verkoopbaarheid,
+  geschiktheid voor een bepaald doel of juistheid van berekeningen. De
+  FinApp-ontwikkelaars zijn niet aansprakelijk voor schade die voortvloeit
+  uit het gebruik van de software. Controleer financiële beslissingen altijd
+  aan de hand van je eigen bankgegevens.
