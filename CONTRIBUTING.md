@@ -21,14 +21,27 @@ landelijke winkels, banken, overheidsinstanties. Regels voor je eigen
 werkgever, familie of lokale zaken stel je in de app in als
 tegenpartij-regel; die staan dan alleen in jouw database.
 
-## Eigendom van bijdragen
+## Licentie van je bijdrage
 
-FinApp is geen open source; zie `LICENSE`. Door een pull request in te
-dienen ga je ermee akkoord dat je bijdrage gezamenlijk eigendom wordt van de
-FinApp-ontwikkelaars, onder de onderlinge afspraken die wij daarover hebben
-gemaakt. Je mag de software gebruiken, wijzigen en draaien voor eigen gebruik
-en voor de ontwikkeling van FinApp, maar niet doorgeven aan anderen. Wil je
-iets van FinApp hergebruiken in een ander project, overleg dat dan eerst.
+FinApp staat onder de PolyForm Noncommercial 1.0.0-licentie (zie `LICENSE`).
+Door een pull request in te dienen ga je akkoord met het volgende:
+
+- Je bijdrage valt onder dezelfde PolyForm Noncommercial-licentie als de rest
+  van FinApp.
+- Je geeft de FinApp-ontwikkelaars daarnaast een eeuwigdurend, onherroepelijk,
+  wereldwijd en royaltyvrij recht om je bijdrage te gebruiken, aan te passen
+  en te verspreiden onder elke licentie, ook commercieel. Dit maakt het
+  mogelijk om FinApp later als betaalde of donatie-gebaseerde applicatie aan
+  te bieden zonder dat elke bijdrager daar opnieuw voor om toestemming moet
+  worden gevraagd.
+- Je blijft zelf auteursrechthebbende van je bijdrage en mag die elders
+  gebruiken zoals je wilt.
+- Je verklaart dat je het recht hebt om de bijdrage onder deze voorwaarden te
+  leveren: het is je eigen werk, of je hebt toestemming van degene die het
+  gemaakt heeft.
+
+Wie structureel meebouwt, kan toetreden tot de FinApp-ontwikkelaars; daarover
+maken we onderling afspraken buiten deze repository om.
 
 ## Ontwerpprincipes
 

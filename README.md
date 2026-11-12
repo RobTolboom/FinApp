@@ -76,7 +76,16 @@ repository komen. Problemen en ideeën: open een issue.
 
 ## Licentie
 
-FinApp is geen open source; alle rechten zijn voorbehouden aan de
-FinApp-ontwikkelaars, zie `LICENSE`. Het plan is om in de toekomst een
-betaalde gebruikerslicentie aan te bieden waarmee je de app op je eigen
-computer of NAS draait. Wij hosten niets en zien je gegevens nooit.
+FinApp is beschikbaar onder de [PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)-licentie,
+zie `LICENSE`. In het kort:
+
+- Je mag de code lezen, de app installeren, draaien en aanpassen voor
+  persoonlijk en ander niet-commercieel gebruik, en de software delen zolang
+  deze licentie meegaat.
+- Commercieel gebruik door anderen is niet toegestaan: niet verkopen, niet
+  als betaalde dienst aanbieden, niet verwerken in een commercieel product.
+- De FinApp-ontwikkelaars houden het recht om de software zelf tegen betaling
+  of tegen een donatie aan te bieden, bijvoorbeeld als kant-en-klare
+  applicatie voor wie niet met code wil werken.
+
+Bijdragen zijn welkom; zie `CONTRIBUTING.md` voor de voorwaarden.
