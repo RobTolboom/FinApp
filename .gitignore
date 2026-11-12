@@ -1,0 +1,21 @@
+# Persoonlijke gegevens: nooit committen
+data/*
+!data/.gitkeep
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.xml
+*.csv
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# macOS / editors
+.DS_Store
+.idea/
+.vscode/

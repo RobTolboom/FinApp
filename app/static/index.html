@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FinApp</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">€</span>
+    <div>
+      <h1>FinApp</h1>
+      <p class="sub" id="coverage">Lokaal overzicht van je uitgaven</p>
+    </div>
+  </div>
+  <div class="period">
+    <label for="period">Periode</label>
+    <select id="period"></select>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button data-tab="overview" class="active">Overzicht</button>
+  <button data-tab="trends">Trends</button>
+  <button data-tab="projects">Projecten</button>
+  <button data-tab="networth">Vermogen</button>
+  <button data-tab="fixed">Vaste lasten</button>
+  <button data-tab="tx">Transacties</button>
+  <button data-tab="import">Importeren</button>
+  <button data-tab="settings">Instellingen</button>
+</nav>
+
+<main>
+  <section id="tab-overview" class="tab active"></section>
+  <section id="tab-trends" class="tab"></section>
+  <section id="tab-projects" class="tab"></section>
+  <section id="tab-networth" class="tab"></section>
+  <section id="tab-fixed" class="tab"></section>
+  <section id="tab-tx" class="tab"></section>
+  <section id="tab-import" class="tab"></section>
+  <section id="tab-settings" class="tab"></section>
+</main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

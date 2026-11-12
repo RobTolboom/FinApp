@@ -1,0 +1,31 @@
+# FinApp op een Synology NAS (Container Manager)
+#
+# Mappenstructuur op de NAS (bijvoorbeeld in de gedeelde map 'docker'):
+#   /volume1/docker/finapp/docker-compose.yml   <- dit bestand
+#   /volume1/docker/finapp/app/                 <- de programmabestanden (app.py, static/, ...)
+#   /volume1/docker/finapp/data/finapp.db       <- je database (van de Mac overzetten)
+#
+# Starten: Container Manager > Project > Aanmaken > pad /docker/finapp > dit bestand gebruiken.
+# Openen:  http://<ip-van-je-nas>:8765  of  http://<nasnaam>.local:8765
+
+services:
+  finapp:
+    image: python:3.12-slim
+    container_name: finapp
+    working_dir: /app
+    command: ["python", "app.py", "--host", "0.0.0.0", "--no-browser"]
+    environment:
+      - FINAPP_DB=/data/finapp.db
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      # Optioneel: vraag om een wachtwoord (gebruikersnaam 'finapp').
+      # - FINAPP_PASSWORD=kies-een-sterk-wachtwoord
+      # Optioneel: extra toegestane hostnamen, bijv. een eigen naam in je router-DNS.
+      # - FINAPP_ALLOWED_HOSTS=finapp.thuis
+    volumes:
+      - ./app:/app:ro
+      - ./data:/data
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "8765:8765"
+    restart: unless-stopped
