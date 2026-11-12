@@ -21,6 +21,15 @@ landelijke winkels, banken, overheidsinstanties. Regels voor je eigen
 werkgever, familie of lokale zaken stel je in de app in als
 tegenpartij-regel; die staan dan alleen in jouw database.
 
+## Eigendom van bijdragen
+
+FinApp is geen open source; zie `LICENSE`. Door een pull request in te
+dienen ga je ermee akkoord dat je bijdrage gezamenlijk eigendom wordt van de
+FinApp-ontwikkelaars, onder de onderlinge afspraken die wij daarover hebben
+gemaakt. Je mag de software gebruiken, wijzigen en draaien voor eigen gebruik
+en voor de ontwikkeling van FinApp, maar niet doorgeven aan anderen. Wil je
+iets van FinApp hergebruiken in een ander project, overleg dat dan eerst.
+
 ## Ontwerpprincipes
 
 - **Geen dependencies.** De backend gebruikt alleen de
