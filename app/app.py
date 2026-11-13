@@ -18,6 +18,7 @@ import os
 import sqlite3
 import sys
 import threading
+import unicodedata
 import webbrowser
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -580,6 +581,13 @@ def _hostname(host_header):
     return h.rsplit(":", 1)[0] if h.count(":") == 1 else h
 
 
+def _cred(text):
+    """Inloggegevens als bytes. compare_digest weigert tekst met tekens buiten
+    ASCII, waardoor een wachtwoord met bijvoorbeeld é of € nooit zou kloppen.
+    Normaliseren voorkomt dat dezelfde letter in twee schrijfwijzen verschilt."""
+    return unicodedata.normalize("NFC", text).encode("utf-8")
+
+
 def make_handler(store, port, lan=False, extra_hosts=(), auth=None):
     """lan=False: alleen bereikbaar op deze computer (127.0.0.1).
     lan=True: ook vanaf het thuisnetwerk. Dan worden alleen verzoeken van
@@ -632,7 +640,8 @@ def make_handler(store, port, lan=False, extra_hosts=(), auth=None):
                 if hdr.startswith("Basic "):
                     try:
                         user, _, pw = base64.b64decode(hdr[6:]).decode("utf-8").partition(":")
-                        ok = hmac.compare_digest(user, auth[0]) & hmac.compare_digest(pw, auth[1])
+                        ok = (hmac.compare_digest(_cred(user), _cred(auth[0]))
+                              & hmac.compare_digest(_cred(pw), _cred(auth[1])))
                     except Exception:
                         ok = False
                 if not ok:
