@@ -136,6 +136,37 @@ function coverageWarnings(r) {
   return w;
 }
 
+/* Zo veel dagen mogen gegevens achterlopen voordat er een melding komt. Het
+   advies is maandelijks importeren en een creditcardafschrift kan een maand
+   naijlen. */
+const STALE_DAYS = 45;
+const dayDiff = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+
+function accountLabel(a) {
+  const kind = a.source === "amex" ? "Amex-kaart" : "Bankrekening";
+  return a.account ? `${kind} eindigend op ${a.account.slice(-4)}` : kind;
+}
+
+/* Meldingen die aansporen om de gegevens actueel te houden: één als alles oud
+   is, en één per open rekening die achterloopt op de nieuwste gegevens. */
+function staleNotices() {
+  const d = S.data;
+  const open = (d.accounts || []).filter((a) => !a.closed);
+  if (!d.end_date || !open.length) return "";
+  const out = [];
+  const toImport = '<button class="link small" data-goto="import">Naar Importeren</button>';
+  if (dayDiff(d.end_date, new Date().toISOString().slice(0, 10)) > STALE_DAYS) {
+    out.push(`Je nieuwste gegevens zijn van ${fmtDate(d.end_date)}. Importeer de laatste periode om je overzicht actueel te houden. ${toImport}`);
+  }
+  for (const a of open) {
+    if (dayDiff(a.to, d.end_date) <= STALE_DAYS) continue;
+    out.push(`<strong>${esc(accountLabel(a))}</strong> loopt achter: de laatste boeking is van ${fmtDate(a.to)}.
+      Importeer de nieuwe periode, of sluit de rekening af als je hem niet meer gebruikt. ${toImport}
+      <button class="link small" data-goto="settings">Rekening afsluiten</button>`);
+  }
+  return out.map((w) => `<div class="notice">${w}</div>`).join("");
+}
+
 /* ------------------------------------------------------------ render */
 
 function render() {
@@ -193,6 +224,7 @@ function renderOverview() {
   const maxCat = cats.length ? cats[0][1].total : 1;
 
   $("#tab-overview").innerHTML = `
+    ${staleNotices()}
     ${warns.map((w) => `<div class="notice">${esc(w)}</div>`).join("")}
     ${excl.length ? `<div class="notice info">${excl.length} ${excl.length === 1 ? "post" : "posten"} (${eur(-excl.reduce((a, t) => a + t.amount, 0))}) uitgesloten van deze cijfers.
       <button class="link small" data-showexcluded="1">Bekijken</button></div>` : ""}
@@ -847,6 +879,7 @@ function renderFixed() {
   const excluded = S.data.excluded_recurring;
 
   $("#tab-fixed").innerHTML = `
+    ${staleNotices()}
     <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
       <div class="kpi accent"><div class="l">Totaal per maand</div><div class="v">${eur(total)}</div></div>
       <div class="kpi"><div class="l">Totaal per jaar</div><div class="v">${eur(totalYear)}</div></div>
@@ -1041,6 +1074,7 @@ async function importFiles(files) {
 function renderSettings() {
   const st = S.data.settings;
   const suggestions = ownAccountSuggestions();
+  const accounts = S.data.accounts || [];
   $("#tab-settings").innerHTML = `
     <div class="grid2">
       <div class="panel">
@@ -1083,6 +1117,17 @@ function renderSettings() {
         <h3>Herkenningsregels</h3>
         <p class="muted" style="font-size:13px">De standaardregels staan in <span class="mono">rules.py</span>. Wijzigingen die je hier in de app maakt (per transactie of per tegenpartij) gaan altijd voor.</p>
       </div>
+    </div>
+    <div class="panel">
+      <h2>Rekeningen</h2>
+      <p class="muted" style="font-size:13px;margin-top:-4px">Gebruik je een rekening niet meer, sluit hem dan af. Vaste lasten op een afgesloten rekening
+        tellen als beëindigd en de rekening geeft geen melding meer dat hij achterloopt. De transacties blijven bewaard.</p>
+      ${accounts.length ? `<table>
+        <tr><th>Rekening</th><th class="num">Transacties</th><th>Eerste boeking</th><th>Laatste boeking</th><th>Status</th><th></th></tr>
+        ${accounts.map((a, i) => `<tr class="${a.closed ? "inactive" : ""}"><td>${esc(accountLabel(a))}</td><td class="num">${a.count}</td>
+          <td>${fmtDate(a.from)}</td><td>${fmtDate(a.to)}</td><td>${a.closed ? "Afgesloten" : "In gebruik"}</td>
+          <td class="num"><button class="link small" data-account="${i}" data-state="${a.closed ? "0" : "1"}">${a.closed ? "heropenen" : "afsluiten"}</button></td></tr>`).join("")}
+      </table>` : '<p class="muted">Nog geen rekeningen. Ze verschijnen hier na de eerste import.</p>'}
     </div>`;
 }
 
@@ -1132,6 +1177,11 @@ document.addEventListener("click", async (e) => {
     else if (b.dataset.savesettings) {
       await api("/api/settings", { own_ibans: $("#s-ibans").value.split("\n"), own_names: $("#s-names").value.split("\n") });
       toast("Instellingen opgeslagen"); await reload();
+    }
+    else if (b.dataset.account) {
+      const a = S.data.accounts[+b.dataset.account], closed = b.dataset.state === "1";
+      await api("/api/account", { source: a.source, account: a.account, closed });
+      toast(closed ? "Rekening afgesloten" : "Rekening heropend"); await reload();
     }
     else if (b.dataset.exclude) {
       await api("/api/exclude", { uid: b.dataset.exclude, exclude: b.dataset.state === "1" });
