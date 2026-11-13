@@ -141,6 +141,7 @@ class Store:
             s = {r["k"]: json.loads(r["v"]) for r in c.execute("SELECT k, v FROM settings")}
         s.setdefault("own_ibans", [])
         s.setdefault("own_names", [])
+        s.setdefault("closed_accounts", [])
         s.setdefault("mortgage_split", True)
         s.setdefault("mortgage_match", "HYPOTHE")
         return s
@@ -203,7 +204,8 @@ class Store:
         if st.get("mortgage_split") and mort["repay_by_month"] and "Aflossing hypotheek" in kind_of:
             txs = self._split_mortgage(txs, mort, st.get("mortgage_match") or "HYPOTHE", cat_of)
         end_date = txs[0]["date"] if txs else None
-        recurring, member = engine.find_recurring(txs, cat_of, kind_of, rec_ov, end_date)
+        closed = {(a[0], a[1]) for a in st["closed_accounts"]}
+        recurring, member = engine.find_recurring(txs, cat_of, kind_of, rec_ov, end_date, closed)
         for t in txs:
             t["group"] = member.get(t["uid"])
         for v in vacations:
@@ -214,18 +216,22 @@ class Store:
             r["override"] = rec_ov.get(r["key"])
         # handmatig als 'niet vast' gemarkeerd, zodat je dat kunt terugdraaien
         excluded = [k for k, v in rec_ov.items() if v == "no"]
-        sources = {}
+        sources, accounts = {}, {}
         for t in txs:
             if t.get("synthetic"):
                 continue
-            s = sources.setdefault(t["source"], {"count": 0, "from": t["date"], "to": t["date"]})
-            s["count"] += 1
-            s["from"] = min(s["from"], t["date"])
-            s["to"] = max(s["to"], t["date"])
+            k = (t["source"], t["account"] or "")
+            for s in (sources.setdefault(t["source"], {"count": 0, "from": t["date"], "to": t["date"]}),
+                      accounts.setdefault(k, {"source": k[0], "account": k[1], "closed": k in closed,
+                                              "count": 0, "from": t["date"], "to": t["date"]})):
+                s["count"] += 1
+                s["from"] = min(s["from"], t["date"])
+                s["to"] = max(s["to"], t["date"])
         return {
             "categories": cats, "settings": st, "transactions": txs,
             "recurring": recurring, "excluded_recurring": excluded,
             "imports": imports, "sources": sources, "end_date": end_date,
+            "accounts": [accounts[k] for k in sorted(accounts)],
             "db_path": str(self.path), "vacations": vacations,
             "labels": labels, "networth": self._networth(txs, balances, assets, vals),
             "mortgage": {"parts": mort["parts"], "monthly_balance": mort["monthly_balance"]},
@@ -543,6 +549,21 @@ class Store:
                 c.execute("INSERT OR REPLACE INTO settings VALUES (?,?)", (k, json.dumps(v)))
         return {"ok": True}
 
+    def set_account_closed(self, source, account, closed):
+        """Sluit een rekening af of heropent hem. Vaste lasten op een afgesloten
+        rekening gelden als gestopt zodra er geen nieuwe boekingen meer komen."""
+        key = [str(source or ""), str(account or "")]
+        with self.lock, self.conn() as c:
+            if not c.execute("SELECT 1 FROM transactions WHERE source=? AND IFNULL(account,'')=? LIMIT 1",
+                             key).fetchone():
+                raise ValueError("Onbekende rekening")
+            row = c.execute("SELECT v FROM settings WHERE k='closed_accounts'").fetchone()
+            cur = [a for a in (json.loads(row["v"]) if row else []) if list(a) != key]
+            if closed:
+                cur.append(key)
+            c.execute("INSERT OR REPLACE INTO settings VALUES (?,?)", ("closed_accounts", json.dumps(cur)))
+        return {"ok": True}
+
     def add_category(self, name, kind):
         name = (name or "").strip()
         if not name or kind not in ("expense", "income", "transfer"):
@@ -677,6 +698,9 @@ def make_handler(store, port, lan=False, extra_hosts=(), auth=None):
                     return self._send(200, store.set_recurring(body["key"], body.get("state")))
                 if path == "/api/settings":
                     return self._send(200, store.save_settings(body))
+                if path == "/api/account":
+                    return self._send(200, store.set_account_closed(body["source"], body.get("account"),
+                                                                    bool(body.get("closed"))))
                 if path == "/api/categories":
                     return self._send(200, store.add_category(body.get("name"), body.get("kind")))
                 if path == "/api/exclude":
