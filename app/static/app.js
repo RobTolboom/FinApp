@@ -100,7 +100,11 @@ function periodRange() {
     if (from < firstKey) from = firstKey;
   }
   if (to < from) { to = endKey; from = endKey; }
-  return { from, to, months: monthsBetween(from, to), endKey, partialExcluded: !endComplete };
+  // Bovengrens voor de transactielijst: de lopende maand hoort daar wel bij,
+  // maar een gekozen jaar houdt op in december van dat jaar.
+  const yearEnd = S.period.startsWith("y") ? `${S.period.slice(1)}-12` : endKey;
+  const txTo = yearEnd < endKey ? yearEnd : endKey;
+  return { from, to, months: monthsBetween(from, to), endKey, txTo, partialExcluded: !endComplete };
 }
 
 function inRange(t, r) { const k = monthKey(t.date); return k >= r.from && k <= r.to; }
@@ -944,7 +948,7 @@ function renderTx() {
   const cats = S.data.categories;
   const q = f.q.trim().toLowerCase();
   let list = f.label ? S.data.transactions.filter((t) => (t.labels || []).includes(+f.label))
-    : S.data.transactions.filter((t) => monthKey(t.date) >= r.from && monthKey(t.date) <= r.endKey);
+    : S.data.transactions.filter((t) => monthKey(t.date) >= r.from && monthKey(t.date) <= r.txTo);
   S.sel = S.sel || new Set();
   const labels = S.data.labels || [];
   if (f.cat) list = list.filter((t) => t.category === f.cat);
