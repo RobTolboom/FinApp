@@ -18,8 +18,11 @@ services:
       - FINAPP_DB=/data/finapp.db
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
-      # Optioneel: vraag om een wachtwoord (gebruikersnaam 'finapp').
-      # - FINAPP_PASSWORD=kies-een-sterk-wachtwoord
+      # Verplicht: vul hier een eigen wachtwoord in (gebruikersnaam 'finapp',
+      # aan te passen met FINAPP_USER). Zonder wachtwoord start FinApp niet.
+      - FINAPP_PASSWORD=
+      # Bewust zonder wachtwoord draaien? Haal dan het hekje hieronder weg.
+      # - FINAPP_NO_PASSWORD=1
       # Optioneel: extra toegestane hostnamen, bijv. een eigen naam in je router-DNS.
       # - FINAPP_ALLOWED_HOSTS=finapp.thuis
     volumes:
