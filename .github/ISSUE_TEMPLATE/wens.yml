@@ -1,0 +1,51 @@
+name: Idee of wens
+description: Een nieuwe functie of een verbetering voorstellen.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Leuk dat je meedenkt. **Deze repository is openbaar: plak hier geen
+        persoonlijke gegevens.** Gebruik in voorbeelden verzonnen waarden
+        zoals `Voorbeeld BV` en `NL00BANK0123456789`.
+
+        FinApp heeft een paar vaste uitgangspunten: geen externe
+        dependencies, niets naar internet, bedragen in centen en bestaande
+        databases blijven werken. Zie `CONTRIBUTING.md`. Een voorstel dat
+        daarvan afwijkt is welkom, maar leg dan uit waarom het nodig is.
+  - type: textarea
+    id: probleem
+    attributes:
+      label: Welk probleem lost het op?
+      description: Wat wil je kunnen doen dat nu niet of onhandig gaat?
+    validations:
+      required: true
+  - type: textarea
+    id: voorstel
+    attributes:
+      label: Wat stel je voor?
+      description: Beschrijf hoe het er voor een gebruiker uit zou zien.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatieven
+    attributes:
+      label: Alternatieven
+      description: Hoe los je het nu op, of welke andere oplossing heb je overwogen?
+  - type: dropdown
+    id: meebouwen
+    attributes:
+      label: Wil je er zelf aan meebouwen?
+      options:
+        - Ja, ik wil het zelf maken
+        - Ja, met hulp
+        - Nee
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: Ik heb gecontroleerd dat dit voorstel geen bankgegevens, IBAN's of namen bevat.
+          required: true

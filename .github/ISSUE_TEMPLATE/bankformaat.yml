@@ -1,0 +1,79 @@
+name: Nieuw bankformaat
+description: Een bank of exportformaat dat FinApp nog niet of niet goed inleest.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        FinApp leest nu CAMT.053 (XML) en de CSV van American Express.
+        Met dit formulier vraag je ondersteuning voor een andere bank of een
+        ander formaat, of meld je dat een export van jouw bank verkeerd wordt
+        ingelezen.
+
+        **Voeg nooit je echte export toe.** Deze repository is openbaar en
+        wat hier staat, blijft vindbaar. Beschrijf alleen de structuur en
+        vervang alle inhoud door verzonnen waarden zoals `Voorbeeld BV`,
+        `NL00BANK0123456789` en `12,34`.
+  - type: input
+    id: bank
+    attributes:
+      label: Bank of kaartuitgever
+    validations:
+      required: true
+  - type: dropdown
+    id: rekening
+    attributes:
+      label: Soort rekening
+      options:
+        - Betaalrekening
+        - Spaarrekening
+        - Creditcard
+        - Anders
+    validations:
+      required: true
+  - type: dropdown
+    id: formaat
+    attributes:
+      label: Bestandsformaat
+      options:
+        - CAMT.053 (XML)
+        - CSV
+        - MT940
+        - Anders
+    validations:
+      required: true
+  - type: textarea
+    id: probleem
+    attributes:
+      label: Wat gaat er mis of wat ontbreekt?
+      description: Bijvoorbeeld een foutmelding bij het importeren, lege omschrijvingen, verkeerde datums of bedragen.
+    validations:
+      required: true
+  - type: textarea
+    id: structuur
+    attributes:
+      label: Structuur van het bestand
+      description: |
+        Bij CSV: de kopregel en twee of drie regels met verzonnen waarden, met het echte scheidingsteken.
+        Bij XML of MT940: één transactie met alle elementen of velden, met verzonnen waarden.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: notatie
+    attributes:
+      label: Notatie van datums en bedragen
+      description: Zoals ze in het bestand staan.
+      placeholder: 31-12-2026 en 1.234,56, met een aparte kolom voor af of bij
+  - type: input
+    id: exportpad
+    attributes:
+      label: Waar vind je de export bij de bank?
+      placeholder: Mijn bank, Rekening, Downloaden, formaat ...
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: Ik heb geen echte export toegevoegd en alle voorbeeldwaarden zijn verzonnen.
+          required: true
