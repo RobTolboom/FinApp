@@ -67,8 +67,11 @@ Voor een push
 
 ## 3. Branches en commits
 
-- `main` is de uitgangsbasis. Dit is een gratis privérepository, dus
-  branch protection is niet technisch afdwingbaar; het is een afspraak.
+- `main` is de uitgangsbasis en is op GitHub beschermd: wijzigingen komen
+  alleen binnen via een pull request met één goedkeuring, commits moeten
+  gesigneerd zijn en de geschiedenis blijft lineair (squash merge).
+  Beheerders kunnen die bescherming omzeilen; niet direct op `main`
+  committen blijft daarom ook een afspraak.
 - Werk op kortlevende topic-branches: `feat/...`, `fix/...`, `docs/...`,
   `refactor/...`, `chore/...`.
 - Conventional Commits met Nederlandse omschrijving: `feat: vakanties per

@@ -69,9 +69,9 @@ maken we onderling afspraken buiten deze repository om.
    `feat: vakanties per jaar tonen`, `fix: Amex-bedragen met komma parsen`.
 5. Push je branch en open een pull request. Beschrijf wat er verandert,
    waarom, en hoe je het hebt getest.
-6. Iemand anders kijkt mee en merget. Werk nooit direct op `main`; dat is
-   een afspraak, want op een gratis privérepository kan GitHub het niet
-   afdwingen.
+6. Iemand anders kijkt mee en merget. Werk nooit direct op `main`: GitHub
+   laat wijzigingen daar alleen toe via een pull request met een
+   goedkeuring.
 
 ## Commits signeren
 
