@@ -69,9 +69,9 @@ maken we onderling afspraken buiten deze repository om.
    `feat: vakanties per jaar tonen`, `fix: Amex-bedragen met komma parsen`.
 5. Push je branch en open een pull request. Beschrijf wat er verandert,
    waarom, en hoe je het hebt getest.
-6. Iemand anders kijkt mee en merget. Werk nooit direct op `main`; dat is
-   een afspraak, want op een gratis privérepository kan GitHub het niet
-   afdwingen.
+6. Iemand anders kijkt mee en merget. Werk nooit direct op `main`: GitHub
+   laat wijzigingen daar alleen toe via een pull request met een
+   goedkeuring.
 
 ## Commits signeren
 
@@ -108,5 +108,16 @@ git push --force-with-lease
 
 ## Ideeën en problemen
 
-Open een issue in deze repository. Beschrijf bij een bug welk bestandstype
-je importeerde en wat je verwachtte, zonder het bestand zelf bij te voegen.
+Open een issue in deze repository en kies een van de formulieren. Beschrijf
+bij een bug welk bestandstype je importeerde en wat je verwachtte, zonder
+het bestand zelf bij te voegen.
+
+Nieuwe functies bespreken we in issues, één issue per idee:
+
+- Reageer in het issue met je mening en geef een duimpje als je het idee
+  graag gebouwd ziet. De issuelijst is op duimpjes te sorteren.
+- Het label laat zien waar een idee staat: `bespreken` (meningen gevraagd),
+  `akkoord` (gaan we bouwen) of `later` (goed idee, nu geen prioriteit).
+- Een idee dat we niet gaan bouwen, sluiten we met een korte uitleg.
+- Na akkoord volgt voor grotere wijzigingen een plan in `docs/plans/`. De
+  pull request verwijst naar het issue.
