@@ -1,0 +1,87 @@
+name: Fout melden
+description: Iets in FinApp werkt niet zoals je verwacht.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Dank voor je melding. **Deze repository is openbaar: plak hier geen
+        persoonlijke gegevens.** Dus geen bankexports, IBAN's, bedragen die
+        naar jou te herleiden zijn, namen van personen of werkgevers, en geen
+        schermafbeeldingen waar die op staan. Vervang ze door verzonnen
+        waarden zoals `Voorbeeld BV` en `NL00BANK0123456789`.
+  - type: textarea
+    id: wat-gebeurde
+    attributes:
+      label: Wat gebeurde er?
+      description: Beschrijf kort wat je zag.
+    validations:
+      required: true
+  - type: textarea
+    id: verwacht
+    attributes:
+      label: Wat verwachtte je?
+    validations:
+      required: true
+  - type: textarea
+    id: stappen
+    attributes:
+      label: Stappen om het na te doen
+      description: Zo precies mogelijk, zodat iemand anders de fout kan oproepen.
+      placeholder: |
+        1. Ga naar het tabblad ...
+        2. Kies ...
+        3. Klik op ...
+    validations:
+      required: true
+  - type: dropdown
+    id: onderdeel
+    attributes:
+      label: Onderdeel
+      options:
+        - Overzicht
+        - Trends
+        - Projecten
+        - Vermogen of hypotheek
+        - Vaste lasten
+        - Transacties en categorieën
+        - Importeren
+        - Instellingen
+        - Installatie of Docker
+        - Anders
+    validations:
+      required: true
+  - type: dropdown
+    id: omgeving
+    attributes:
+      label: Hoe draai je FinApp?
+      options:
+        - Op de eigen computer
+        - Docker op een NAS
+        - Docker op een andere computer
+        - Anders
+    validations:
+      required: true
+  - type: input
+    id: versie
+    attributes:
+      label: Versie
+      description: De datum waarop je FinApp voor het laatst hebt bijgewerkt, of de uitvoer van `git rev-parse --short HEAD`.
+  - type: input
+    id: browser
+    attributes:
+      label: Browser en apparaat
+      placeholder: Safari op een Mac, Chrome op een telefoon, ...
+  - type: textarea
+    id: foutmelding
+    attributes:
+      label: Foutmelding of logregels
+      description: Letterlijke tekst uit de app, de terminal of `docker compose logs`. Haal persoonlijke gegevens er eerst uit.
+      render: text
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: Ik heb gecontroleerd dat deze melding geen bankgegevens, IBAN's of namen bevat.
+          required: true
