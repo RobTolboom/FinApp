@@ -2,6 +2,7 @@
 #
 # Mappenstructuur op de NAS (bijvoorbeeld in de gedeelde map 'docker'):
 #   /volume1/docker/finapp/docker-compose.yml   <- dit bestand
+#   /volume1/docker/finapp/.env                 <- je wachtwoord (kopie van .env.example)
 #   /volume1/docker/finapp/app/                 <- de programmabestanden (app.py, static/, ...)
 #   /volume1/docker/finapp/data/finapp.db       <- je database (van de Mac overzetten)
 #
@@ -18,11 +19,12 @@ services:
       - FINAPP_DB=/data/finapp.db
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
-      # Verplicht: vul hier een eigen wachtwoord in (gebruikersnaam 'finapp',
-      # aan te passen met FINAPP_USER). Zonder wachtwoord start FinApp niet.
-      - FINAPP_PASSWORD=
-      # Bewust zonder wachtwoord draaien? Haal dan het hekje hieronder weg.
-      # - FINAPP_NO_PASSWORD=1
+      # Het wachtwoord staat niet in dit bestand, maar in .env in dezelfde map.
+      # Kopieer .env.example naar .env en vul daar FINAPP_PASSWORD in. Zonder
+      # wachtwoord start FinApp niet.
+      - FINAPP_PASSWORD=${FINAPP_PASSWORD:-}
+      - FINAPP_USER=${FINAPP_USER:-finapp}
+      - FINAPP_NO_PASSWORD=${FINAPP_NO_PASSWORD:-}
       # Optioneel: extra toegestane hostnamen, bijv. een eigen naam in je router-DNS.
       # - FINAPP_ALLOWED_HOSTS=finapp.thuis
     volumes:

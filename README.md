@@ -36,12 +36,15 @@ python3 app/app.py --port 8765 --db /pad/naar/finapp.db --no-browser
 De meegeleverde `docker-compose.yml` gebruikt het standaard `python:3.12-slim`
 image en mount de map `app/` en `data/`.
 
-Vul eerst een wachtwoord in bij `FINAPP_PASSWORD` in `docker-compose.yml`.
-Zodra FinApp vanaf het thuisnetwerk bereikbaar is, start het niet zonder
-wachtwoord; de melding daarover staat in `docker compose logs`. Wie bewust
-zonder wachtwoord wil draaien, zet `FINAPP_NO_PASSWORD=1`. Start daarna:
+Kopieer eerst `.env.example` naar `.env` en vul daar een wachtwoord in bij
+`FINAPP_PASSWORD`. Het bestand `.env` staat in `.gitignore` en komt dus niet
+op GitHub. Zodra FinApp vanaf het thuisnetwerk bereikbaar is, start het niet
+zonder wachtwoord; de melding daarover staat in `docker compose logs`. Wie
+bewust zonder wachtwoord wil draaien, zet in `.env` `FINAPP_NO_PASSWORD=1`.
+Start daarna:
 
 ```bash
+cp .env.example .env    # vul daarna je wachtwoord in
 docker compose up -d
 ```
 
