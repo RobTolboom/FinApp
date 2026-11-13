@@ -73,6 +73,31 @@ maken we onderling afspraken buiten deze repository om.
    een afspraak, want op een gratis privérepository kan GitHub het niet
    afdwingen.
 
+## Commits signeren
+
+`main` accepteert alleen gesigneerde commits. Ongesigneerde commits op je
+branch kunnen het mergen van je pull request blokkeren, dus stel signeren
+één keer in voordat je begint. Met een SSH-sleutel gaat dat zo:
+
+```bash
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519.pub
+git config --global commit.gpgsign true
+```
+
+Voeg dezelfde publieke sleutel daarna toe op GitHub onder Settings, "SSH and
+GPG keys", met als type "Signing Key". Gebruik je die sleutel al om in te
+loggen, dan voeg je hem daar een tweede keer toe als signing key. Staat er
+op GitHub "Verified" bij je commit, dan werkt het.
+
+Heb je al ongesigneerde commits op je branch staan? Signeer ze dan alsnog en
+push de branch opnieuw:
+
+```bash
+git rebase --force-rebase main
+git push --force-with-lease
+```
+
 ## Code
 
 - Comments, documentatie en teksten in de app zijn in het Nederlands.
