@@ -141,7 +141,9 @@ internet.
   in de eigen database. Persoonlijke patronen zijn op 2026-11-12 bewust
   verwijderd.
 - Omgevingsvariabelen: `FINAPP_DB`, `FINAPP_HOST`, `FINAPP_PORT`,
-  `FINAPP_PASSWORD`, `FINAPP_USER`, `FINAPP_ALLOWED_HOSTS`. Standaard
-  luistert de app alleen op `127.0.0.1`.
+  `FINAPP_PASSWORD`, `FINAPP_NO_PASSWORD`, `FINAPP_USER`,
+  `FINAPP_ALLOWED_HOSTS`. Standaard luistert de app alleen op
+  `127.0.0.1`. In thuisnetwerkmodus start de app niet zonder wachtwoord,
+  tenzij `FINAPP_NO_PASSWORD=1` is gezet.
 - Python 3.9 is de ondergrens (standaard-macOS); gebruik geen nieuwere
   syntaxis zoals `match` of `X | Y` in type-annotaties.

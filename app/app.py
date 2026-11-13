@@ -719,12 +719,19 @@ def main():
     ap.add_argument("--db", default=os.environ.get("FINAPP_DB") or str(default_db_path()))
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--host", default=os.environ.get("FINAPP_HOST") or "127.0.0.1",
-                    help="0.0.0.0 om ook vanaf het thuisnetwerk bereikbaar te zijn (bijv. op een NAS)")
+                    help="0.0.0.0 om ook vanaf het thuisnetwerk bereikbaar te zijn (bijv. op een NAS); "
+                         "vereist dan FINAPP_PASSWORD")
     a = ap.parse_args()
     lan = a.host not in ("127.0.0.1", "localhost")
     extra_hosts = (os.environ.get("FINAPP_ALLOWED_HOSTS") or "").split(",")
     pw = os.environ.get("FINAPP_PASSWORD") or ""
     auth = ((os.environ.get("FINAPP_USER") or "finapp"), pw) if pw else None
+    # In thuisnetwerkmodus kan elk apparaat op het netwerk bij de gegevens.
+    # Daarom is een wachtwoord verplicht, tenzij dat bewust is uitgezet.
+    if lan and not auth and (os.environ.get("FINAPP_NO_PASSWORD") or "").strip() != "1":
+        sys.exit("FinApp start niet: in thuisnetwerkmodus is een wachtwoord verplicht.\n"
+                 "Zet FINAPP_PASSWORD (gebruikersnaam via FINAPP_USER, standaard 'finapp').\n"
+                 "Wil je bewust zonder wachtwoord draaien, zet dan FINAPP_NO_PASSWORD=1.")
 
     store = Store(a.db)
     port = int(os.environ.get("FINAPP_PORT") or a.port)
@@ -740,7 +747,8 @@ def main():
     url = "http://%s:%d/" % ("127.0.0.1" if not lan else "<ip-van-dit-apparaat>", port)
     if lan:
         print("Thuisnetwerkmodus: alleen verzoeken van privé-IP-adressen worden geaccepteerd.")
-        print("Inlog: %s" % ("aan" if auth else "uit (zet FINAPP_PASSWORD om een wachtwoord te vragen)"))
+        print("Inlog: %s" % ("aan" if auth else
+                             "uit (FINAPP_NO_PASSWORD=1): iedereen op het thuisnetwerk kan bij je gegevens"))
     print("FinApp draait op %s" % url)
     print("Database: %s" % a.db)
     print("Sluit dit venster of druk op Ctrl+C om te stoppen.")
