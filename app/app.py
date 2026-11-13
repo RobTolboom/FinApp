@@ -18,6 +18,7 @@ import os
 import sqlite3
 import sys
 import threading
+import unicodedata
 import webbrowser
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -141,6 +142,7 @@ class Store:
             s = {r["k"]: json.loads(r["v"]) for r in c.execute("SELECT k, v FROM settings")}
         s.setdefault("own_ibans", [])
         s.setdefault("own_names", [])
+        s.setdefault("closed_accounts", [])
         s.setdefault("mortgage_split", True)
         s.setdefault("mortgage_match", "HYPOTHE")
         return s
@@ -203,7 +205,8 @@ class Store:
         if st.get("mortgage_split") and mort["repay_by_month"] and "Aflossing hypotheek" in kind_of:
             txs = self._split_mortgage(txs, mort, st.get("mortgage_match") or "HYPOTHE", cat_of)
         end_date = txs[0]["date"] if txs else None
-        recurring, member = engine.find_recurring(txs, cat_of, kind_of, rec_ov, end_date)
+        closed = {(a[0], a[1]) for a in st["closed_accounts"]}
+        recurring, member = engine.find_recurring(txs, cat_of, kind_of, rec_ov, end_date, closed)
         for t in txs:
             t["group"] = member.get(t["uid"])
         for v in vacations:
@@ -214,18 +217,22 @@ class Store:
             r["override"] = rec_ov.get(r["key"])
         # handmatig als 'niet vast' gemarkeerd, zodat je dat kunt terugdraaien
         excluded = [k for k, v in rec_ov.items() if v == "no"]
-        sources = {}
+        sources, accounts = {}, {}
         for t in txs:
             if t.get("synthetic"):
                 continue
-            s = sources.setdefault(t["source"], {"count": 0, "from": t["date"], "to": t["date"]})
-            s["count"] += 1
-            s["from"] = min(s["from"], t["date"])
-            s["to"] = max(s["to"], t["date"])
+            k = (t["source"], t["account"] or "")
+            for s in (sources.setdefault(t["source"], {"count": 0, "from": t["date"], "to": t["date"]}),
+                      accounts.setdefault(k, {"source": k[0], "account": k[1], "closed": k in closed,
+                                              "count": 0, "from": t["date"], "to": t["date"]})):
+                s["count"] += 1
+                s["from"] = min(s["from"], t["date"])
+                s["to"] = max(s["to"], t["date"])
         return {
             "categories": cats, "settings": st, "transactions": txs,
             "recurring": recurring, "excluded_recurring": excluded,
             "imports": imports, "sources": sources, "end_date": end_date,
+            "accounts": [accounts[k] for k in sorted(accounts)],
             "db_path": str(self.path), "vacations": vacations,
             "labels": labels, "networth": self._networth(txs, balances, assets, vals),
             "mortgage": {"parts": mort["parts"], "monthly_balance": mort["monthly_balance"]},
@@ -543,6 +550,21 @@ class Store:
                 c.execute("INSERT OR REPLACE INTO settings VALUES (?,?)", (k, json.dumps(v)))
         return {"ok": True}
 
+    def set_account_closed(self, source, account, closed):
+        """Sluit een rekening af of heropent hem. Vaste lasten op een afgesloten
+        rekening gelden als gestopt zodra er geen nieuwe boekingen meer komen."""
+        key = [str(source or ""), str(account or "")]
+        with self.lock, self.conn() as c:
+            if not c.execute("SELECT 1 FROM transactions WHERE source=? AND IFNULL(account,'')=? LIMIT 1",
+                             key).fetchone():
+                raise ValueError("Onbekende rekening")
+            row = c.execute("SELECT v FROM settings WHERE k='closed_accounts'").fetchone()
+            cur = [a for a in (json.loads(row["v"]) if row else []) if list(a) != key]
+            if closed:
+                cur.append(key)
+            c.execute("INSERT OR REPLACE INTO settings VALUES (?,?)", ("closed_accounts", json.dumps(cur)))
+        return {"ok": True}
+
     def add_category(self, name, kind):
         name = (name or "").strip()
         if not name or kind not in ("expense", "income", "transfer"):
@@ -578,6 +600,13 @@ def _hostname(host_header):
     if h.startswith("["):                     # [ipv6]:poort
         return h[1:h.find("]")] if "]" in h else h
     return h.rsplit(":", 1)[0] if h.count(":") == 1 else h
+
+
+def _cred(text):
+    """Inloggegevens als bytes. compare_digest weigert tekst met tekens buiten
+    ASCII, waardoor een wachtwoord met bijvoorbeeld é of € nooit zou kloppen.
+    Normaliseren voorkomt dat dezelfde letter in twee schrijfwijzen verschilt."""
+    return unicodedata.normalize("NFC", text).encode("utf-8")
 
 
 def make_handler(store, port, lan=False, extra_hosts=(), auth=None):
@@ -632,7 +661,8 @@ def make_handler(store, port, lan=False, extra_hosts=(), auth=None):
                 if hdr.startswith("Basic "):
                     try:
                         user, _, pw = base64.b64decode(hdr[6:]).decode("utf-8").partition(":")
-                        ok = hmac.compare_digest(user, auth[0]) & hmac.compare_digest(pw, auth[1])
+                        ok = (hmac.compare_digest(_cred(user), _cred(auth[0]))
+                              & hmac.compare_digest(_cred(pw), _cred(auth[1])))
                     except Exception:
                         ok = False
                 if not ok:
@@ -677,6 +707,9 @@ def make_handler(store, port, lan=False, extra_hosts=(), auth=None):
                     return self._send(200, store.set_recurring(body["key"], body.get("state")))
                 if path == "/api/settings":
                     return self._send(200, store.save_settings(body))
+                if path == "/api/account":
+                    return self._send(200, store.set_account_closed(body["source"], body.get("account"),
+                                                                    bool(body.get("closed"))))
                 if path == "/api/categories":
                     return self._send(200, store.add_category(body.get("name"), body.get("kind")))
                 if path == "/api/exclude":
@@ -710,12 +743,19 @@ def main():
     ap.add_argument("--db", default=os.environ.get("FINAPP_DB") or str(default_db_path()))
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--host", default=os.environ.get("FINAPP_HOST") or "127.0.0.1",
-                    help="0.0.0.0 om ook vanaf het thuisnetwerk bereikbaar te zijn (bijv. op een NAS)")
+                    help="0.0.0.0 om ook vanaf het thuisnetwerk bereikbaar te zijn (bijv. op een NAS); "
+                         "vereist dan FINAPP_PASSWORD")
     a = ap.parse_args()
     lan = a.host not in ("127.0.0.1", "localhost")
     extra_hosts = (os.environ.get("FINAPP_ALLOWED_HOSTS") or "").split(",")
     pw = os.environ.get("FINAPP_PASSWORD") or ""
     auth = ((os.environ.get("FINAPP_USER") or "finapp"), pw) if pw else None
+    # In thuisnetwerkmodus kan elk apparaat op het netwerk bij de gegevens.
+    # Daarom is een wachtwoord verplicht, tenzij dat bewust is uitgezet.
+    if lan and not auth and (os.environ.get("FINAPP_NO_PASSWORD") or "").strip() != "1":
+        sys.exit("FinApp start niet: in thuisnetwerkmodus is een wachtwoord verplicht.\n"
+                 "Zet FINAPP_PASSWORD (gebruikersnaam via FINAPP_USER, standaard 'finapp').\n"
+                 "Wil je bewust zonder wachtwoord draaien, zet dan FINAPP_NO_PASSWORD=1.")
 
     store = Store(a.db)
     port = int(os.environ.get("FINAPP_PORT") or a.port)
@@ -731,7 +771,8 @@ def main():
     url = "http://%s:%d/" % ("127.0.0.1" if not lan else "<ip-van-dit-apparaat>", port)
     if lan:
         print("Thuisnetwerkmodus: alleen verzoeken van privé-IP-adressen worden geaccepteerd.")
-        print("Inlog: %s" % ("aan" if auth else "uit (zet FINAPP_PASSWORD om een wachtwoord te vragen)"))
+        print("Inlog: %s" % ("aan" if auth else
+                             "uit (FINAPP_NO_PASSWORD=1): iedereen op het thuisnetwerk kan bij je gegevens"))
     print("FinApp draait op %s" % url)
     print("Database: %s" % a.db)
     print("Sluit dit venster of druk op Ctrl+C om te stoppen.")

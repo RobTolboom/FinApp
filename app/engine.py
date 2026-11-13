@@ -233,7 +233,7 @@ def _amount_clusters(txs):
     return clusters
 
 
-def find_recurring(txs, cat_of, kind_of, overrides, end_date):
+def find_recurring(txs, cat_of, kind_of, overrides, end_date, closed=()):
     """
     txs: alle transacties
     cat_of: uid -> categorie
@@ -250,6 +250,21 @@ def find_recurring(txs, cat_of, kind_of, overrides, end_date):
         by_key[t["merchant_key"]].append(t)
 
     end = _d(end_date) if end_date else date.today()
+    # Laatste boekdatum per bron en rekening. Een rekening die achterloopt, zoals
+    # een creditcard die later wordt geïmporteerd, mag een last niet als gestopt
+    # laten tellen. Voor een afgesloten rekening telt de algemene einddatum, zodat
+    # de lasten daarop vanzelf als gestopt gelden.
+    closed = set(closed)
+    last_seen = {}
+    for t in txs:
+        k = (t.get("source"), t.get("account") or "")
+        if t["date"] > last_seen.get(k, ""):
+            last_seen[k] = t["date"]
+
+    def end_for(t):
+        k = (t.get("source"), t.get("account") or "")
+        return end if k in closed or k not in last_seen else _d(last_seen[k])
+
     results, member = [], {}
 
     def add(key, group, period, manual):
@@ -258,7 +273,7 @@ def find_recurring(txs, cat_of, kind_of, overrides, end_date):
         recent = [-t["amount"] for t in group[-3:]]
         amount = int(statistics.median(recent))
         last = group[-1]
-        age = (end - _d(last["date"])).days
+        age = (end_for(last) - _d(last["date"])).days
         active = age <= days * 1.5 + 10
         cats = defaultdict(int)
         for t in group:

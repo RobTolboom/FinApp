@@ -34,9 +34,17 @@ python3 app/app.py --port 8765 --db /pad/naar/finapp.db --no-browser
 ## Draaien in Docker (bijvoorbeeld op een Synology NAS)
 
 De meegeleverde `docker-compose.yml` gebruikt het standaard `python:3.12-slim`
-image en mount de map `app/` en `data/`:
+image en mount de map `app/` en `data/`.
+
+Kopieer eerst `.env.example` naar `.env` en vul daar een wachtwoord in bij
+`FINAPP_PASSWORD`. Het bestand `.env` staat in `.gitignore` en komt dus niet
+op GitHub. Zodra FinApp vanaf het thuisnetwerk bereikbaar is, start het niet
+zonder wachtwoord; de melding daarover staat in `docker compose logs`. Wie
+bewust zonder wachtwoord wil draaien, zet in `.env` `FINAPP_NO_PASSWORD=1`.
+Start daarna:
 
 ```bash
+cp .env.example .env    # vul daarna je wachtwoord in
 docker compose up -d
 ```
 
@@ -50,7 +58,8 @@ Open daarna `http://<ip-van-je-nas>:8765`. Zie de toelichting bovenin
 | `FINAPP_DB`            | Pad naar de SQLite-database                                   |
 | `FINAPP_HOST`          | Adres om op te luisteren (`0.0.0.0` in Docker)                |
 | `FINAPP_PORT`          | Poort (standaard 8765)                                        |
-| `FINAPP_PASSWORD`      | Zet basis-authenticatie aan                                   |
+| `FINAPP_PASSWORD`      | Wachtwoord voor inloggen; verplicht op het thuisnetwerk       |
+| `FINAPP_NO_PASSWORD`   | `1`: bewust zonder wachtwoord draaien op het thuisnetwerk     |
 | `FINAPP_USER`          | Gebruikersnaam bij `FINAPP_PASSWORD` (standaard `finapp`)     |
 | `FINAPP_ALLOWED_HOSTS` | Extra toegestane hostnamen, kommagescheiden                   |
 
