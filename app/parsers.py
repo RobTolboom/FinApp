@@ -239,6 +239,22 @@ def _amount(s):
     return -cents if neg else cents
 
 
+def _amex_date_format(values):
+    """Volgorde van dag en maand in datums met schuine strepen, afgeleid uit
+    het hele bestand: een waarde boven de 12 kan alleen een dag zijn. Zonder
+    zo'n waarde geldt maand/dag/jaar, zoals Amex Nederland exporteert."""
+    first_big = second_big = False
+    for v in values:
+        m = re.fullmatch(r"(\d{1,2})/(\d{1,2})/\d{4}", v)
+        if m:
+            first_big = first_big or int(m.group(1)) > 12
+            second_big = second_big or int(m.group(2)) > 12
+    if first_big and second_big:
+        raise ImportFout("De datums in dit CSV-bestand gebruiken dag/maand en maand/dag door elkaar; "
+                         "het bestand is niet geïmporteerd.")
+    return "%d/%m/%Y" if first_big else "%m/%d/%Y"
+
+
 def _split_amex_desc(desc):
     """Amex zet de winkelnaam in een vaste breedte van 23 tekens, gevolgd
     door de plaats."""
@@ -258,15 +274,16 @@ def parse_amex_csv(data):
     if not need.issubset(fields):
         raise ImportFout("Onbekend CSV-formaat; verwacht een American Express-export "
                          "met de kolommen Datum, Omschrijving en Bedrag.")
+    rows = [row for row in reader if row.get("Datum")]
+    slash_format = _amex_date_format(row["Datum"].strip() for row in rows)
     txs = []
     seen = {}
-    for row in reader:
-        if not row.get("Datum"):
-            continue
+    for row in rows:
+        datum = row["Datum"].strip()
         try:
-            date = datetime.strptime(row["Datum"].strip(), "%m/%d/%Y").date().isoformat()
+            date = datetime.strptime(datum, slash_format if "/" in datum else "%d-%m-%Y").date().isoformat()
         except ValueError:
-            date = datetime.strptime(row["Datum"].strip(), "%d-%m-%Y").date().isoformat()
+            raise ImportFout("Datum '%s' is niet te lezen; het bestand is niet geïmporteerd." % datum)
         # Amex: positief = uitgave, negatief = betaling/creditering
         cents = -_amount(row.get("Bedrag"))
         desc = (row.get("Omschrijving") or "").strip()
