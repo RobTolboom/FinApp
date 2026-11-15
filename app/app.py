@@ -268,7 +268,7 @@ class Store:
                 "interest_now": cur["interest"] if cur else None,
                 "repayment_now": cur["repayment"] if cur else None,
                 "interest_year": sum(r["interest"] for r in sched if r["month"][:4] == yr),
-                "repayment_year": sum(r["repayment"] for r in sched if r["month"][:4] == yr),
+                "repayment_year": sum(r["repayment"] + r["extra"] for r in sched if r["month"][:4] == yr),
                 "end_month": sched[-1]["month"] if sched else None,
                 "rate_now": ([r["rate"] for r in sorted(pr, key=lambda r: r["date"]) if r["date"][:7] <= today] or [p["rate"]])[-1],
             })

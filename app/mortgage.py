@@ -30,7 +30,9 @@ def opening_balance(part, corrections=()):
 
 
 def schedule(part, rates=(), corrections=()):
-    """Geeft een lijst maanden met dict(month, interest, repayment, balance)."""
+    """Geeft een lijst maanden met dict(month, interest, repayment, extra,
+    balance). 'extra' is wat een correctie in die maand extra van de
+    restschuld afhaalt (negatief als de correctie de restschuld verhoogt)."""
     start = part["start"][:7]
     term = int(part["term_months"])
     kind = part["kind"]
@@ -60,21 +62,25 @@ def schedule(part, rates=(), corrections=()):
             pay = bal / remaining if i == 0 else bal * i / (1 - (1 + i) ** -remaining)
             repay = min(bal, pay - interest)
         bal -= repay
+        extra = 0.0
         if mk in corr_by_month:
             # correctie: bekende restschuld aan het eind van deze maand
+            extra = max(0.0, bal) - corr_by_month[mk]
             bal = corr_by_month[mk]
             if kind == "lineair":
                 lin_step = bal / max(1, term - n)
         out.append({"month": mk, "interest": int(round(interest)), "repayment": int(round(repay)),
-                    "balance": int(round(max(0.0, bal)))})
+                    "extra": int(round(extra)), "balance": int(round(max(0.0, bal)))})
         # afgelost: stoppen, tenzij een latere correctie de restschuld weer zet
         if bal <= 0.5 and kind != "aflossingsvrij" and mk >= last_corr:
             break
     # correcties na het einde van de looptijd: alleen de restschuld bijwerken
     end = _add(start, term)
     for mk in sorted(m for m in corr_by_month if m > end):
+        extra = max(0.0, bal) - corr_by_month[mk]
         bal = corr_by_month[mk]
-        out.append({"month": mk, "interest": 0, "repayment": 0, "balance": int(round(max(0.0, bal)))})
+        out.append({"month": mk, "interest": 0, "repayment": 0, "extra": int(round(extra)),
+                    "balance": int(round(max(0.0, bal)))})
     return out
 
 
