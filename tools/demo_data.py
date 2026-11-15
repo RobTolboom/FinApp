@@ -124,6 +124,7 @@ class Generator:
             self.maand(m)
             m = volgende_maand(m)
         self.dagelijks()
+        self.amex_aflossingen()
         self.bank.sort(key=lambda t: (t["date"], t["ref"]))
         self.spaar.sort(key=lambda t: (t["date"], t["ref"]))
         self.amex.sort(key=lambda t: (t["date"], t["ref"]))
@@ -187,17 +188,23 @@ class Generator:
         if m.month == 6 and self.vakantie:
             self.amex_regel(dag_in_maand(m, 3), 84000, "BOOKING.COM", "AMSTERDAM")
 
-        # Amex-aflossing van de vorige maand, plus de betaling op de Amex-kaart
-        vorige = (m - timedelta(days=1)).replace(day=1)
-        totaal = sum(a["amount"] for a in self.amex if vorige <= a["date"] < m)
-        if totaal > 0:
+    def amex_aflossingen(self):
+        """Lost elke maand de Amex-aankopen van de vorige maand af: een incasso
+        op de betaalrekening plus de betaling op de Amex-kaart. Draait na
+        dagelijks(), zodat ook de vakantie-uitgaven meetellen."""
+        aankopen = [a for a in self.amex if a["amount"] > 0]
+        m = volgende_maand(maand_start(self.start))
+        while m <= self.eind:
+            vorige = (m - timedelta(days=1)).replace(day=1)
+            totaal = sum(a["amount"] for a in aankopen if vorige <= a["date"] < m)
             d = dag_in_maand(m, 10)
-            self.boeking(d, -totaal, "American Express Europe SA",
-                         "Incasso creditcard rekeningoverzicht", "44", iban="NL00DEMO0000000904")
-            if self.start <= d <= self.eind:
+            if totaal > 0 and d <= self.eind:
+                self.boeking(d, -totaal, "American Express Europe SA",
+                             "Incasso creditcard rekeningoverzicht", "44", iban="NL00DEMO0000000904")
                 self.amex.append({"date": d, "amount": -totaal,
                                   "desc": "HARTELIJK BEDANKT VOOR UW BETALING", "land": "",
                                   "ref": self.ref()})
+            m = volgende_maand(m)
 
     def amex_regel(self, d, cents, winkel, stad, land="NETHERLANDS"):
         if d < self.start or d > self.eind:
@@ -327,6 +334,18 @@ def schrijf_amex(pad, regels):
                         eur_nl(a["amount"]), "", a["land"], "'%s'" % a["ref"]])
 
 
+def in_git_repo(pad):
+    """True als pad in een git-repository ligt, ook als dit script ergens
+    anders staat dan in die repository."""
+    while True:
+        if os.path.exists(os.path.join(pad, ".git")):
+            return True
+        boven = os.path.dirname(pad)
+        if boven == pad:
+            return False
+        pad = boven
+
+
 def main():
     vandaag = date.today()
     standaard_eind = vandaag.replace(day=1) - timedelta(days=1)
@@ -343,9 +362,9 @@ def main():
     for _ in range(a.maanden - 1):
         start = maand_start(start - timedelta(days=1))
 
-    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    uit = os.path.abspath(a.uit)
-    if uit == repo or uit.startswith(repo + os.sep):
+    repo = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    uit = os.path.realpath(a.uit)
+    if uit == repo or uit.startswith(repo + os.sep) or in_git_repo(uit):
         ap.error("schrijf de uitvoer buiten de repository (bijv. /tmp/finapp-demo)")
     os.makedirs(uit, exist_ok=True)
 
