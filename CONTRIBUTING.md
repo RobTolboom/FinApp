@@ -59,6 +59,14 @@ maken we onderling afspraken buiten deze repository om.
 1. Haal `main` op: `git switch main && git pull`.
 2. Maak een branch: `git switch -c feat/korte-omschrijving`. Prefixen:
    `feat/`, `fix/`, `docs/`, `refactor/`, `chore/`.
+   Hoort je werk bij een issue? Wijs het issue dan aan jezelf toe en maak
+   de branch vanuit het issue aan, zodat iedereen ziet wie eraan werkt en
+   welke branch erbij hoort. Dat kan op de issuepagina onder "Development"
+   ("Create a branch"), of met:
+   ```bash
+   gh issue edit 12 --add-assignee "@me"
+   gh issue develop 12 --base main --name fix/korte-omschrijving --checkout
+   ```
 3. Bouw en test lokaal met een wegwerpdatabase, zodat je eigen gegevens
    buiten schot blijven:
    ```bash
@@ -69,7 +77,12 @@ maken we onderling afspraken buiten deze repository om.
 4. Commit in kleine stappen met een duidelijke boodschap:
    `feat: vakanties per jaar tonen`, `fix: Amex-bedragen met komma parsen`.
 5. Push je branch en open een pull request. Beschrijf wat er verandert,
-   waarom, en hoe je het hebt getest.
+   waarom, en hoe je het hebt getest; het formulier van de pull request
+   geeft de kopjes. Lost je pull request een issue op, zet dan
+   `Closes #12` in de beschrijving. Het issue sluit dan vanzelf bij het
+   mergen. GitHub herkent alleen de Engelse woorden `closes`, `fixes` en
+   `resolves`; met "Sluit #12" gebeurt er niets. Bij meerdere issues
+   herhaal je het woord: `Closes #12, closes #13`.
 6. Iemand anders kijkt mee en merget. Werk nooit direct op `main`: GitHub
    laat wijzigingen daar alleen toe via een pull request met een
    goedkeuring.
@@ -141,4 +154,4 @@ Nieuwe functies bespreken we in issues, één issue per idee:
   `akkoord` (gaan we bouwen) of `later` (goed idee, nu geen prioriteit).
 - Een idee dat we niet gaan bouwen, sluiten we met een korte uitleg.
 - Na akkoord volgt voor grotere wijzigingen een plan in `docs/plans/`. De
-  pull request verwijst naar het issue.
+  pull request sluit het issue met `Closes #12` (zie "Zo werk je").

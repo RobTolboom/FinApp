@@ -74,6 +74,15 @@ Voor een push
   committen blijft daarom ook een afspraak.
 - Werk op kortlevende topic-branches: `feat/...`, `fix/...`, `docs/...`,
   `refactor/...`, `chore/...`.
+- Hoort het werk bij een issue, maak de branch dan vanuit dat issue aan,
+  zodat hij bij het issue onder "Development" staat:
+  `gh issue develop <nr> --base main --name fix/onderwerp --checkout`.
+  Dit maakt de branch ook op GitHub aan. Lost één branch meerdere issues
+  op, koppel hem dan aan het eerste issue; de andere worden via de pull
+  request gekoppeld.
+- Wijs het issue toe aan wie eraan werkt zodra het werk begint, zodat
+  niemand er dubbel aan begint: `gh issue edit <nr> --add-assignee "@me"`.
+  Is het issue al aan iemand anders toegewezen, vraag dan eerst na.
 - Conventional Commits met Nederlandse omschrijving: `feat: vakanties per
   jaar tonen`, `fix: Amex-bedragen met komma parsen`.
 - Commit in kleine, samenhangende stappen.
@@ -90,6 +99,14 @@ Voor een push
 Controleer dit één keer per pull request, niet per bewerking.
 - Een beschrijving van wat er verandert, waarom, en hoe het handmatig is
   getest (er zijn nog geen geautomatiseerde tests).
+- Een koppeling met elk issue dat de pull request oplost, zodat het issue
+  bij het mergen vanzelf sluit. Zet in de beschrijving per issue een
+  Engels sleutelwoord: `Closes #12, closes #13`. GitHub herkent alleen
+  `closes`, `fixes` en `resolves`; "Sluit #12" koppelt niets. Controleer
+  na het openen dat alle issues gekoppeld zijn:
+  `gh pr view <nr> --json closingIssuesReferences`.
+- Een issue dat de pull request alleen raakt maar niet oplost, noem je
+  zonder sleutelwoord: `Zie #12`.
 - `README.md` alleen bijwerken als de tekst daar niet meer klopt.
 - Bij schemawijzigingen: het schema is additief (`CREATE TABLE IF NOT
   EXISTS`, `setdefault` voor instellingen, `RENAMES` voor categorieën),
