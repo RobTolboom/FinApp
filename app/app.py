@@ -15,6 +15,7 @@ import ipaddress
 import json
 import re
 import os
+import socketserver
 import sqlite3
 import stat
 import sys
@@ -701,6 +702,14 @@ def _cred(text):
     return unicodedata.normalize("NFC", text).encode("utf-8")
 
 
+class Server(ThreadingHTTPServer):
+    def server_bind(self):
+        # HTTPServer.server_bind zoekt de volledige hostnaam op (socket.getfqdn). Op sommige
+        # computers duurt dat tientallen seconden, en de app gebruikt de naam nergens.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 def make_handler(store, port, lan=False, extra_hosts=(), auth=None):
     """lan=False: alleen bereikbaar op deze computer (127.0.0.1).
     lan=True: ook vanaf het thuisnetwerk. Dan worden alleen verzoeken van
@@ -859,7 +868,7 @@ def main():
     port = int(os.environ.get("FINAPP_PORT") or a.port)
     for attempt in range(1 if lan else 10):
         try:
-            srv = ThreadingHTTPServer((a.host, port), make_handler(store, port, lan, extra_hosts, auth))
+            srv = Server((a.host, port), make_handler(store, port, lan, extra_hosts, auth))
             break
         except OSError:
             port += 1
