@@ -137,6 +137,11 @@ def parse_camt053(data):
             # Status staat in oudere versies direct in Sts, in nieuwere in Sts/Cd
             if (t(ntry, "c:Sts/c:Cd") or t(ntry, "c:Sts")) not in ("", "BOOK"):
                 continue
+            amt_el = ntry.find("c:Amt", ns)
+            ccy = (amt_el.get("Ccy") or "").upper() if amt_el is not None else ""
+            if ccy and ccy != "EUR":
+                raise ImportFout("Rekening %s bevat boekingen in %s. FinApp rekent alleen in euro; "
+                                 "dit afschrift is niet geïmporteerd." % (iban or "zonder IBAN", ccy))
             amt = t(ntry, "c:Amt")
             cents = int(round(float(amt) * 100))
             sign = t(ntry, "c:CdtDbtInd")
