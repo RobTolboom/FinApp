@@ -145,6 +145,13 @@ function coverageWarnings(r) {
    advies is maandelijks importeren en een creditcardafschrift kan een maand
    naijlen. */
 const STALE_DAYS = 45;
+/* Vandaag als JJJJ-MM-DD in de tijd van de gebruiker. toISOString() geeft de
+   datum in UTC, en die loopt in Nederland na middernacht een of twee uur achter. */
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 const dayDiff = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
 
 function accountLabel(a) {
@@ -160,7 +167,7 @@ function staleNotices() {
   if (!d.end_date || !open.length) return "";
   const out = [];
   const toImport = '<button class="link small" data-goto="import">Naar Importeren</button>';
-  if (dayDiff(d.end_date, new Date().toISOString().slice(0, 10)) > STALE_DAYS) {
+  if (dayDiff(d.end_date, localToday()) > STALE_DAYS) {
     out.push(`Je nieuwste gegevens zijn van ${fmtDate(d.end_date)}. Importeer de laatste periode om je overzicht actueel te houden. ${toImport}`);
   }
   for (const a of open) {
@@ -591,7 +598,7 @@ function monthEnd(k) {
 
 function renderNetworth() {
   const nw = S.data.networth || { accounts: [], assets: [] };
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const accts = nw.accounts || [], assets = nw.assets || [];
   const mbal = (S.data.mortgage || {}).monthly_balance || {};
   const hasMort = Object.keys(mbal).length > 0;
@@ -688,7 +695,7 @@ function mortgagePanel() {
   const m = S.data.mortgage || { parts: [] };
   const st = S.data.settings || {};
   const parts = m.parts || [];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const tot = (f) => parts.reduce((a, p) => a + (p[f] || 0), 0);
   const edit = S.editPart ? parts.find((p) => p.id === S.editPart) : null;
   const form = (p) => `
