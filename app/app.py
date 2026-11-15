@@ -486,7 +486,13 @@ class Store:
                     raise ValueError("Er bestaat al een label met deze naam")
                 return {"ok": True, "id": cur.lastrowid}
             if act == "rename":
-                c.execute("UPDATE labels SET name=? WHERE id=?", (body["name"].strip(), int(body["id"])))
+                name = (body.get("name") or "").strip()
+                if not name:
+                    raise ValueError("Geef het label een naam")
+                try:
+                    c.execute("UPDATE labels SET name=? WHERE id=?", (name, int(body["id"])))
+                except sqlite3.IntegrityError:
+                    raise ValueError("Er bestaat al een label met deze naam")
             elif act == "delete":
                 c.execute("DELETE FROM tx_labels WHERE label_id=?", (int(body["id"]),))
                 c.execute("DELETE FROM labels WHERE id=?", (int(body["id"]),))
