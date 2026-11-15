@@ -5,6 +5,7 @@
 const S = {
   data: null,
   tab: "overview",
+  settingsTab: "accounts",
   period: "12",
   txFilter: { q: "", cat: "", source: "", flow: "", fixedOnly: false, limit: 300 },
   applyToMerchant: true,
@@ -166,7 +167,7 @@ function staleNotices() {
     if (dayDiff(a.to, d.end_date) <= STALE_DAYS) continue;
     out.push(`<strong>${esc(accountLabel(a))}</strong> loopt achter: de laatste boeking is van ${fmtDate(a.to)}.
       Importeer de nieuwe periode, of sluit de rekening af als je hem niet meer gebruikt. ${toImport}
-      <button class="link small" data-goto="settings">Rekening afsluiten</button>`);
+      <button class="link small" data-goto="settings" data-settab="accounts">Rekening afsluiten</button>`);
   }
   return out.map((w) => `<div class="notice">${w}</div>`).join("");
 }
@@ -1075,63 +1076,95 @@ async function importFiles(files) {
 
 /* ---------- Instellingen */
 
+const SETTINGS_TABS = [
+  ["accounts", "Rekeningen", settingsAccounts],
+  ["vacations", "Vakanties", settingsVacations],
+  ["categories", "Categorieën", settingsCategories],
+  ["storage", "Opslag", settingsStorage],
+];
+
 function renderSettings() {
+  const tab = SETTINGS_TABS.find((t) => t[0] === S.settingsTab) || SETTINGS_TABS[0];
+  S.settingsTab = tab[0];
+  $("#tab-settings").innerHTML = `
+    <nav class="subtabs" role="tablist" aria-label="Instellingen">
+      ${SETTINGS_TABS.map(([key, label]) => `<button role="tab" data-settab="${key}" aria-selected="${key === tab[0]}"
+        class="${key === tab[0] ? "active" : ""}">${label}</button>`).join("")}
+    </nav>
+    ${tab[2]()}`;
+}
+
+function settingsAccounts() {
   const st = S.data.settings;
   const suggestions = ownAccountSuggestions();
   const accounts = S.data.accounts || [];
-  $("#tab-settings").innerHTML = `
-    <div class="grid2">
-      <div class="panel">
-        <h2>Eigen rekeningen</h2>
-        <p class="muted" style="font-size:13px;margin-top:-4px">Overboekingen naar en van deze rekeningen (spaarrekening, gezamenlijke rekening) tellen niet mee als uitgave of inkomsten.</p>
-        <label class="muted" style="font-size:12.5px">IBAN's, één per regel</label>
-        <textarea id="s-ibans">${esc(st.own_ibans.join("\n"))}</textarea>
-        ${suggestions.length ? `<p class="muted" style="font-size:12.5px;margin:8px 0 4px">Grote overboekingen gevonden naar:</p>
-          ${suggestions.map((s) => `<div class="row" style="margin-bottom:3px"><span class="mono">${esc(s.iban)}</span>
-            <span class="muted" style="font-size:12.5px">${esc(s.name)} · ${eur(s.total, 1)}</span>
-            <button class="link small" data-addiban="${esc(s.iban)}">toevoegen</button></div>`).join("")}` : ""}
-        <label class="muted" style="font-size:12.5px;display:block;margin-top:12px">Namen van eigen rekeninghouders (optioneel), één per regel</label>
-        <textarea id="s-names" style="min-height:60px">${esc(st.own_names.join("\n"))}</textarea>
-        <p style="margin-bottom:0"><button class="primary" data-savesettings="1">Opslaan</button></p>
-      </div>
-      <div class="panel">
-        <h2>Vakantieperiodes</h2>
-        <p class="muted" style="font-size:13px;margin-top:-4px">Pinbetalingen, geldopnames en buitenlandse Amex-betalingen in deze periodes gaan naar
-          <em>Reizen &amp; vakantie</em>. Vaste lasten, abonnementen en overboekingen blijven ongemoeid, en je eigen aanpassingen gaan altijd voor.</p>
-        ${(S.data.vacations || []).length ? `<table style="margin-bottom:12px">
-          <tr><th>Naam</th><th>Periode</th><th class="num">Verplaatst</th><th></th></tr>
-          ${S.data.vacations.map((v) => `<tr><td>${esc(v.name)}</td><td>${fmtDate(v.start)} t/m ${fmtDate(v.end)}</td>
-            <td class="num">${v.count}</td><td class="num"><button class="link small" data-delvacation="${v.id}">verwijderen</button></td></tr>`).join("")}
-        </table>` : ""}
-        <div class="row">
-          <input type="text" id="v-name" placeholder="Naam, bijv. Zuid-Afrika" style="flex:1;min-width:140px">
-          <input type="date" id="v-start" aria-label="Van">
-          <input type="date" id="v-end" aria-label="Tot en met">
-          <button data-addvacation="1">Toevoegen</button>
-        </div>
-        <h3>Categorie toevoegen</h3>
-        <div class="row">
-          <input type="text" id="c-name" placeholder="Naam">
-          <select id="c-kind"><option value="expense">Uitgave</option><option value="income">Inkomsten</option><option value="transfer">Overboeking (telt niet mee)</option></select>
-          <button data-addcat="1">Toevoegen</button>
-        </div>
-        <h3>Opslag</h3>
-        <p class="muted" style="font-size:13px">Database: <span class="mono">${esc(S.data.db_path)}</span><br>
-          Maak hier af en toe een back-up van. De app verstuurt niets naar internet en luistert alleen op je eigen computer.</p>
-        <h3>Herkenningsregels</h3>
-        <p class="muted" style="font-size:13px">De standaardregels staan in <span class="mono">rules.py</span>. Wijzigingen die je hier in de app maakt (per transactie of per tegenpartij) gaan altijd voor.</p>
-      </div>
+  return `
+    <div class="panel">
+      <h2>Eigen rekeningen</h2>
+      <p class="muted" style="font-size:13px;margin-top:-4px">Overboekingen naar en van deze rekeningen (spaarrekening, gezamenlijke rekening) tellen niet mee als uitgave of inkomsten.</p>
+      <label class="muted" style="font-size:12.5px">IBAN's, één per regel</label>
+      <textarea id="s-ibans">${esc(st.own_ibans.join("\n"))}</textarea>
+      ${suggestions.length ? `<p class="muted" style="font-size:12.5px;margin:8px 0 4px">Grote overboekingen gevonden naar:</p>
+        ${suggestions.map((s) => `<div class="row" style="margin-bottom:3px"><span class="mono">${esc(s.iban)}</span>
+          <span class="muted" style="font-size:12.5px">${esc(s.name)} · ${eur(s.total, 1)}</span>
+          <button class="link small" data-addiban="${esc(s.iban)}">toevoegen</button></div>`).join("")}` : ""}
+      <label class="muted" style="font-size:12.5px;display:block;margin-top:12px">Namen van eigen rekeninghouders (optioneel), één per regel</label>
+      <textarea id="s-names" style="min-height:60px">${esc(st.own_names.join("\n"))}</textarea>
+      <p style="margin-bottom:0"><button class="primary" data-savesettings="1">Opslaan</button></p>
     </div>
     <div class="panel">
       <h2>Rekeningen</h2>
       <p class="muted" style="font-size:13px;margin-top:-4px">Gebruik je een rekening niet meer, sluit hem dan af. Vaste lasten op een afgesloten rekening
         tellen als beëindigd en de rekening geeft geen melding meer dat hij achterloopt. De transacties blijven bewaard.</p>
-      ${accounts.length ? `<table>
+      ${accounts.length ? `<div class="scroll-x"><table>
         <tr><th>Rekening</th><th class="num">Transacties</th><th>Eerste boeking</th><th>Laatste boeking</th><th>Status</th><th></th></tr>
         ${accounts.map((a, i) => `<tr class="${a.closed ? "inactive" : ""}"><td>${esc(accountLabel(a))}</td><td class="num">${a.count}</td>
           <td>${fmtDate(a.from)}</td><td>${fmtDate(a.to)}</td><td>${a.closed ? "Afgesloten" : "In gebruik"}</td>
           <td class="num"><button class="link small" data-account="${i}" data-state="${a.closed ? "0" : "1"}">${a.closed ? "heropenen" : "afsluiten"}</button></td></tr>`).join("")}
-      </table>` : '<p class="muted">Nog geen rekeningen. Ze verschijnen hier na de eerste import.</p>'}
+      </table></div>` : '<p class="muted">Nog geen rekeningen. Ze verschijnen hier na de eerste import.</p>'}
+    </div>`;
+}
+
+function settingsVacations() {
+  return `
+    <div class="panel">
+      <h2>Vakantieperiodes</h2>
+      <p class="muted" style="font-size:13px;margin-top:-4px">Pinbetalingen, geldopnames en buitenlandse Amex-betalingen in deze periodes gaan naar
+        <em>Reizen &amp; vakantie</em>. Vaste lasten, abonnementen en overboekingen blijven ongemoeid, en je eigen aanpassingen gaan altijd voor.</p>
+      ${(S.data.vacations || []).length ? `<div class="scroll-x"><table style="margin-bottom:12px">
+        <tr><th>Naam</th><th>Periode</th><th class="num">Verplaatst</th><th></th></tr>
+        ${S.data.vacations.map((v) => `<tr><td>${esc(v.name)}</td><td>${fmtDate(v.start)} t/m ${fmtDate(v.end)}</td>
+          <td class="num">${v.count}</td><td class="num"><button class="link small" data-delvacation="${v.id}">verwijderen</button></td></tr>`).join("")}
+      </table></div>` : ""}
+      <div class="row">
+        <input type="text" id="v-name" placeholder="Naam, bijv. Zuid-Afrika" style="flex:1;min-width:140px">
+        <input type="date" id="v-start" aria-label="Van">
+        <input type="date" id="v-end" aria-label="Tot en met">
+        <button data-addvacation="1">Toevoegen</button>
+      </div>
+    </div>`;
+}
+
+function settingsCategories() {
+  return `
+    <div class="panel">
+      <h2>Categorie toevoegen</h2>
+      <div class="row">
+        <input type="text" id="c-name" placeholder="Naam">
+        <select id="c-kind"><option value="expense">Uitgave</option><option value="income">Inkomsten</option><option value="transfer">Overboeking (telt niet mee)</option></select>
+        <button data-addcat="1">Toevoegen</button>
+      </div>
+      <h3>Herkenningsregels</h3>
+      <p class="muted" style="font-size:13px;margin-bottom:0">De standaardregels staan in <span class="mono">rules.py</span>. Wijzigingen die je hier in de app maakt (per transactie of per tegenpartij) gaan altijd voor.</p>
+    </div>`;
+}
+
+function settingsStorage() {
+  return `
+    <div class="panel">
+      <h2>Opslag</h2>
+      <p class="muted" style="font-size:13px;margin-bottom:0">Database: <span class="mono">${esc(S.data.db_path)}</span><br>
+        Maak hier af en toe een back-up van. De app verstuurt niets naar internet en luistert alleen op je eigen computer.</p>
     </div>`;
 }
 
@@ -1158,7 +1191,8 @@ document.addEventListener("click", async (e) => {
   if (!b) return;
   try {
     if (b.dataset.tab) { S.tab = b.dataset.tab; render(); }
-    else if (b.dataset.goto) { S.tab = b.dataset.goto; render(); }
+    else if (b.dataset.goto) { S.tab = b.dataset.goto; if (b.dataset.settab) S.settingsTab = b.dataset.settab; render(); }
+    else if (b.dataset.settab) { S.settingsTab = b.dataset.settab; renderSettings(); }
     else if (b.dataset.cat) {
       Object.assign(S.txFilter, { cat: b.dataset.cat, q: "", source: "", flow: "", fixedOnly: false, limit: 300 });
       S.tab = "tx"; render();
