@@ -118,9 +118,14 @@ Controleer dit één keer per pull request, niet per bewerking.
 - Een issue dat de pull request alleen raakt maar niet oplost, noem je
   zonder sleutelwoord: `Zie #12`.
 - `README.md` alleen bijwerken als de tekst daar niet meer klopt.
-- Bij schemawijzigingen: het schema is additief (`CREATE TABLE IF NOT
-  EXISTS`, `setdefault` voor instellingen, `RENAMES` voor categorieën),
-  zodat bestaande databases zonder handwerk blijven werken.
+- Bij schemawijzigingen: bestaande databases blijven zonder handwerk
+  werken. Een nieuwe tabel komt in `SCHEMA` (`CREATE TABLE IF NOT
+  EXISTS`), een instelling via `setdefault`, een hernoemde categorie in
+  `RENAMES`. Een nieuwe kolom of een wijziging van bestaande gegevens is
+  een nieuwe functie achteraan in `MIGRATIONS` (`app/app.py`), met de
+  kolom ook in `SCHEMA` en een test in `tests/test_migrations.py`. De app
+  maakt vóór het omzetten zelf een back-up en houdt de versie bij in
+  `PRAGMA user_version`.
 
 ## 6. Rapporteren
 
@@ -165,6 +170,9 @@ internet.
 - Transactie-`uid`s zijn hashes van de inhoud; ze maken dubbele imports
   onschadelijk. Wijzig de hash-invoer in `parsers.py` niet zonder
   migratie, anders worden alle bestaande transacties als nieuw gezien.
+- Een omzetting in `MIGRATIONS` die op `main` staat, wordt nooit meer
+  aangepast of verwijderd: databases die haar al hebben gehad, zien de
+  wijziging niet. Een correctie is een nieuwe omzetting.
 - `rules.py` moet algemeen bruikbaar blijven: landelijke ketens, banken,
   overheid. Regels voor een werkgever, familie of eigen adres horen in de
   app als tegenpartij-regel (tabel `merchant_rules`) en staan dan alleen

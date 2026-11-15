@@ -51,7 +51,12 @@ het mechanisme neer en brengt de twee bestaande omzettingen erin onder.
    database beschadigt.
 3. Is het versienummer lager, dan maakt de app eerst een back-up en voert
    daarna de ontbrekende omzettingen uit.
-4. Is het versienummer gelijk, dan gebeurt er niets.
+4. Is het versienummer gelijk, dan wordt er niets omgezet.
+
+In geval 3 en 4 past de app daarna `SCHEMA` toe, zoals nu al gebeurt:
+tabellen die nog ontbreken, worden leeg aangemaakt. Een nieuwe tabel vraagt
+daardoor geen omzetting; een omzetting kan ervan uitgaan dat alle tabellen
+bestaan.
 
 ### Back-up
 
