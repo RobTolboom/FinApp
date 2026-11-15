@@ -61,6 +61,10 @@ Na een codewijziging
 Voor een commit
 1. `git status` nalopen: staat er niets uit `data/` of een bankexport bij?
 2. `git diff --staged` lezen.
+3. `python3 tools/privacy_check.py`: zoekt in de gevolgde en gestagede
+   bestanden naar bankexports, databases en geldige IBAN's. Dezelfde
+   controle draait op GitHub bij elke pull request. Namen van personen of
+   werkgevers herkent het script niet; die blijf je zelf nalopen.
 
 Voor een push
 1. Controleren dat de branch op `main` gebaseerd is en geen conflicten heeft.

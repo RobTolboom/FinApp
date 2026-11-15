@@ -1,0 +1,48 @@
+# Controleert elke pull request en elke wijziging op main. Gebruikt alleen
+# Python en Node zoals ze op de runner staan; de app zelf heeft geen
+# dependencies en dat blijft zo.
+name: Controle
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is de ondergrens (standaard-macOS), 3.12 draait in Docker
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Python-bestanden compileren
+        run: python -m py_compile app/*.py tools/*.py
+      - name: Modules importeren
+        # vangt syntaxis die pas bij het laden faalt, zoals X | Y in annotaties
+        run: python -c "import sys; sys.path.insert(0, 'app'); import app, engine, mortgage, parsers, rules"
+
+  frontend:
+    name: JavaScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntaxis van app.js controleren
+        run: node --check app/static/app.js
+
+  privacy:
+    name: Geen persoonlijke gegevens
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bankexports, databases en IBAN's zoeken
+        run: python3 tools/privacy_check.py
