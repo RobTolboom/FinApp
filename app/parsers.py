@@ -205,13 +205,38 @@ def parse_camt053(data):
 
 # ---------------------------------------------------------------- Amex CSV
 
-def _nl_amount(s):
-    s = (s or "").strip().replace("€", "").replace(" ", "")
+_GROUPED_RE = re.compile(r"\d{1,3}(?:[.,]\d{3})+")
+
+
+def _amount(s):
+    """Bedrag als tekst naar centen, in Nederlandse ('1.234,56') of Engelse
+    ('1,234.56') notatie. Een scheidingsteken met drie cijfers erachter
+    scheidt duizendtallen, met één of twee cijfers de decimalen. Wat daar
+    niet in past wordt geweigerd in plaats van gegokt."""
+    raw = (s or "").strip()
+    s = raw.replace("€", "").replace(" ", "").replace(" ", "")
     if not s:
         return 0
-    if "," in s:
-        s = s.replace(".", "").replace(",", ".")
-    return int(round(float(s) * 100))
+    neg = s.startswith("-")
+    s = s.lstrip("+-")
+    whole, dec = s, ""
+    last = max(s.rfind("."), s.rfind(","))
+    if last >= 0:
+        sep = s[last]
+        other = "," if sep == "." else "."
+        tail = s[last + 1:]
+        # decimaalteken: komt één keer voor, met één of twee cijfers erachter
+        if s.count(sep) == 1 and len(tail) in (1, 2) and tail.isdigit():
+            whole, dec = s[:last], tail
+            if sep in whole or (other in whole and not _GROUPED_RE.fullmatch(whole)):
+                whole = ""
+        elif other in s or not _GROUPED_RE.fullmatch(s):
+            whole = ""
+    digits = whole.replace(".", "").replace(",", "")
+    if not digits.isdigit():
+        raise ImportFout("Bedrag '%s' is niet eenduidig te lezen; het bestand is niet geïmporteerd." % raw)
+    cents = int(digits) * 100 + int((dec + "00")[:2])
+    return -cents if neg else cents
 
 
 def _split_amex_desc(desc):
@@ -243,7 +268,7 @@ def parse_amex_csv(data):
         except ValueError:
             date = datetime.strptime(row["Datum"].strip(), "%d-%m-%Y").date().isoformat()
         # Amex: positief = uitgave, negatief = betaling/creditering
-        cents = -_nl_amount(row.get("Bedrag"))
+        cents = -_amount(row.get("Bedrag"))
         desc = (row.get("Omschrijving") or "").strip()
         merchant, city = _split_amex_desc(desc)
         ref = (row.get("Referentie") or "").strip().strip("'\"")
