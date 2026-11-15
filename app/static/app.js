@@ -602,10 +602,10 @@ function renderNetworth() {
   const accts = nw.accounts || [], assets = nw.assets || [];
   const mbal = (S.data.mortgage || {}).monthly_balance || {};
   const hasMort = Object.keys(mbal).length > 0;
-  // maandreeks: vanaf het eerste bekende punt
+  // maandreeks: vanaf het eerste bekende punt van een rekening of vermogensonderdeel. Een
+  // onderdeel dat later begint, telt mee vanaf zijn eerste waarde.
   const starts = [...accts.map((a) => Object.keys(a.monthly)[0]), ...assets.filter((a) => a.valuations.length).map((a) => a.valuations[0].date.slice(0, 7))].filter(Boolean).sort();
-  const firstAll = [...accts.map((a) => Object.keys(a.monthly)[0]), ...(hasMort ? [Object.keys(mbal).sort()[0]] : []), ...assets.filter((a) => a.valuations.length).map((a) => a.valuations[0].date.slice(0, 7))].filter(Boolean).sort().pop();
-  const months = starts.length ? monthsBetween(firstAll, today.slice(0, 7)) : [];
+  const months = starts.length ? monthsBetween(starts[0], today.slice(0, 7)) : [];
   const series = months.map((k) => {
     const day = k === today.slice(0, 7) ? today : monthEnd(k);
     let assetsSum = 0, debt = 0;
