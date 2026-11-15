@@ -134,7 +134,8 @@ def parse_camt053(data):
     for stmt in root.iter("{%s}Stmt" % ns["c"]):
         iban = t(stmt, "c:Acct/c:Id/c:IBAN")
         for ntry in stmt.findall("c:Ntry", ns):
-            if t(ntry, "c:Sts") not in ("", "BOOK"):
+            # Status staat in oudere versies direct in Sts, in nieuwere in Sts/Cd
+            if (t(ntry, "c:Sts/c:Cd") or t(ntry, "c:Sts")) not in ("", "BOOK"):
                 continue
             amt = t(ntry, "c:Amt")
             cents = int(round(float(amt) * 100))
