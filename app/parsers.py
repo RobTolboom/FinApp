@@ -110,6 +110,7 @@ _VL_CODES = {
 }
 
 _DD_RE = re.compile(r"DD:\s*(\d{4}-\d{2}-\d{2})")
+_ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def parse_camt053(data):
@@ -128,6 +129,11 @@ def parse_camt053(data):
             return ""
         x = el.find(path, ns)
         return (x.text or "").strip() if x is not None and x.text else ""
+
+    def camt_date(el, path):
+        """Datum uit Dt, of het datumdeel van DtTm als de bank een tijdstip meelevert."""
+        d = t(el, path + "/c:Dt") or t(el, path + "/c:DtTm")[:10]
+        return d[:10] if _ISO_DATE_RE.match(d) else ""
 
     txs = []
     seen = {}
@@ -149,7 +155,10 @@ def parse_camt053(data):
                 cents = -cents
             if t(ntry, "c:RvslInd") == "true":
                 cents = -cents
-            bookdate = t(ntry, "c:BookgDt/c:Dt") or t(ntry, "c:ValDt/c:Dt")
+            bookdate = camt_date(ntry, "c:BookgDt") or camt_date(ntry, "c:ValDt")
+            if not bookdate:
+                raise ImportFout("Een boeking op rekening %s heeft geen leesbare boekdatum; "
+                                 "dit afschrift is niet geïmporteerd." % (iban or "zonder IBAN"))
             code = t(ntry, "c:BkTxCd/c:Prtry/c:Cd") or t(ntry, "c:BkTxCd/c:Domn/c:Fmly/c:SubFmlyCd")
 
             det = ntry.find("c:NtryDtls/c:TxDtls", ns)
