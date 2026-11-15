@@ -254,7 +254,7 @@ class Store:
                 repay[row["month"]] = repay.get(row["month"], 0) + row["repayment"]
                 interest[row["month"]] = interest.get(row["month"], 0) + row["interest"]
             for mk in months:
-                b = mortgage.balance_at(p, sched, mk)
+                b = mortgage.balance_at(p, sched, mk, pc)
                 if b is not None:
                     bal_total[mk] = bal_total.get(mk, 0) + b
             cur = next((r for r in sched if r["month"] == today), None)
@@ -263,7 +263,7 @@ class Store:
             q.update({
                 "rates": [{"date": r["date"], "rate": r["rate"]} for r in pr],
                 "corrections": [{"date": c["date"], "balance": c["balance"]} for c in pc],
-                "balance_now": mortgage.balance_at(p, sched, today),
+                "balance_now": mortgage.balance_at(p, sched, today, pc),
                 "payment_now": (cur["interest"] + cur["repayment"]) if cur else None,
                 "interest_now": cur["interest"] if cur else None,
                 "repayment_now": cur["repayment"] if cur else None,

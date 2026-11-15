@@ -4,7 +4,8 @@ Een leningdeel heeft een hoofdsom, rente (% per jaar), looptijd in maanden,
 ingangsdatum en aflosvorm (annuitair, lineair of aflossingsvrij).
 Renteherzieningen gelden vanaf de maand van hun datum. Een correctie zet de
 restschuld op een bekende waarde (bijvoorbeeld uit het jaaroverzicht van de
-bank of na een extra aflossing); vanaf daar wordt verder gerekend.
+bank of na een extra aflossing); vanaf daar wordt verder gerekend. Een
+correctie in of vóór de maand van de ingangsdatum is de beginstand.
 
 Bedragen in centen. Maand = 'YYYY-MM'. De eerste termijn valt in de maand
 na de ingangsdatum.
@@ -20,18 +21,28 @@ def _add(key, n):
     return "%04d-%02d" % (y, m)
 
 
+def opening_balance(part, corrections=()):
+    """Restschuld bij de ingangsdatum: de hoofdsom, of de laatste correctie
+    in of vóór de startmaand."""
+    start = part["start"][:7]
+    early = [c for c in sorted(corrections, key=lambda c: c["date"]) if c["date"][:7] <= start]
+    return int(early[-1]["balance"]) if early else int(part["principal"])
+
+
 def schedule(part, rates=(), corrections=()):
     """Geeft een lijst maanden met dict(month, interest, repayment, balance)."""
     start = part["start"][:7]
     term = int(part["term_months"])
     kind = part["kind"]
-    bal = float(part["principal"])
+    bal = float(opening_balance(part, corrections))
     lin_step = bal / term if term else 0.0
     rate = float(part["rate"])
     rate_by_month = sorted(((r["date"][:7], float(r["rate"])) for r in rates))
     corr_by_month = {}
     for c in sorted(corrections, key=lambda c: c["date"]):
-        corr_by_month[c["date"][:7]] = float(c["balance"])
+        if c["date"][:7] > start:
+            corr_by_month[c["date"][:7]] = float(c["balance"])
+    last_corr = max(corr_by_month) if corr_by_month else ""
     out = []
     for n in range(1, term + 1):
         mk = _add(start, n)
@@ -56,16 +67,21 @@ def schedule(part, rates=(), corrections=()):
                 lin_step = bal / max(1, term - n)
         out.append({"month": mk, "interest": int(round(interest)), "repayment": int(round(repay)),
                     "balance": int(round(max(0.0, bal)))})
-        if bal <= 0.5 and kind != "aflossingsvrij":
+        # afgelost: stoppen, tenzij een latere correctie de restschuld weer zet
+        if bal <= 0.5 and kind != "aflossingsvrij" and mk >= last_corr:
             break
-    # correcties in of voor de startmaand
+    # correcties na het einde van de looptijd: alleen de restschuld bijwerken
+    end = _add(start, term)
+    for mk in sorted(m for m in corr_by_month if m > end):
+        bal = corr_by_month[mk]
+        out.append({"month": mk, "interest": 0, "repayment": 0, "balance": int(round(max(0.0, bal)))})
     return out
 
 
-def balance_at(part, sched, month):
-    """Restschuld aan het eind van 'month' (hoofdsom vóór de eerste termijn)."""
+def balance_at(part, sched, month, corrections=()):
+    """Restschuld aan het eind van 'month' (beginstand vóór de eerste termijn)."""
     if month < _add(part["start"][:7], 1):
-        return int(part["principal"]) if month >= part["start"][:7] else None
+        return opening_balance(part, corrections) if month >= part["start"][:7] else None
     last = None
     for row in sched:
         if row["month"] <= month:
