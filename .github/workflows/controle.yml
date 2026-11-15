@@ -1,0 +1,60 @@
+# Controleert elke pull request en elke wijziging op main. Gebruikt geen
+# actions van buiten deze repository: de code wordt met git opgehaald en
+# Python komt uit de officiële Docker-images. De app zelf heeft geen
+# dependencies en dat blijft zo.
+name: Controle
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # zelfde stappen in elke job: de commit van deze run ophalen zonder actions/checkout
+  CHECKOUT: |
+    git config --global --add safe.directory "$GITHUB_WORKSPACE"
+    git init -q .
+    git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+    git fetch -q --depth 1 origin "$GITHUB_SHA"
+    git checkout -q FETCH_HEAD
+
+jobs:
+  python:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    container: python:${{ matrix.python }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is de ondergrens (standaard-macOS), 3.12 draait in Docker
+        python: ["3.9", "3.12"]
+    steps:
+      - name: Code ophalen
+        run: eval "$CHECKOUT"
+      - name: Python-bestanden compileren
+        run: python -m py_compile app/*.py tools/*.py
+      - name: Modules importeren
+        # vangt syntaxis die pas bij het laden faalt, zoals X | Y in annotaties
+        run: python -c "import sys; sys.path.insert(0, 'app'); import app, engine, mortgage, parsers, rules"
+
+  frontend:
+    name: JavaScript
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code ophalen
+        run: eval "$CHECKOUT"
+      - name: Syntaxis van app.js controleren
+        run: node --check app/static/app.js
+
+  privacy:
+    name: Geen persoonlijke gegevens
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code ophalen
+        run: eval "$CHECKOUT"
+      - name: Bankexports, databases en IBAN's zoeken
+        run: python3 tools/privacy_check.py
