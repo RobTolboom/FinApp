@@ -80,9 +80,15 @@ Voor een push
   Dit maakt de branch ook op GitHub aan. Lost één branch meerdere issues
   op, koppel hem dan aan het eerste issue; de andere worden via de pull
   request gekoppeld.
-- Wijs het issue toe aan wie eraan werkt zodra het werk begint, zodat
-  niemand er dubbel aan begint: `gh issue edit <nr> --add-assignee "@me"`.
-  Is het issue al aan iemand anders toegewezen, vraag dan eerst na.
+- Wijs alles waar je aan werkt toe aan wie eraan werkt, zodat niemand er
+  dubbel aan begint en zichtbaar is wie waarmee bezig is:
+  - een issue zodra het werk begint:
+    `gh issue edit <nr> --add-assignee "@me"`;
+  - een pull request bij het openen: `gh pr create --assignee "@me"`, of
+    achteraf `gh pr edit <nr> --add-assignee "@me"`.
+  Is een issue of pull request al aan iemand anders toegewezen, vraag dan
+  eerst na. Stop je met het werk zonder het af te maken, haal de
+  toewijzing dan weg (`--remove-assignee "@me"`).
 - Conventional Commits met Nederlandse omschrijving: `feat: vakanties per
   jaar tonen`, `fix: Amex-bedragen met komma parsen`.
 - Commit in kleine, samenhangende stappen.

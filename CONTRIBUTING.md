@@ -83,6 +83,10 @@ maken we onderling afspraken buiten deze repository om.
    mergen. GitHub herkent alleen de Engelse woorden `closes`, `fixes` en
    `resolves`; met "Sluit #12" gebeurt er niets. Bij meerdere issues
    herhaal je het woord: `Closes #12, closes #13`.
+   Wijs ook de pull request aan jezelf toe, rechts onder "Assignees" of
+   met `gh pr create --assignee "@me"`.
+   Stop je met een issue of pull request zonder het af te maken, haal je
+   naam er dan weer af, zodat een ander het kan oppakken.
 6. Iemand anders kijkt mee en merget. Werk nooit direct op `main`: GitHub
    laat wijzigingen daar alleen toe via een pull request met een
    goedkeuring.
