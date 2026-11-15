@@ -51,27 +51,70 @@ maken we onderling afspraken buiten deze repository om.
   Wil je toch iets toevoegen, bespreek het eerst in een issue.
 - **Niets naar internet.** Geen externe API's, geen CDN's, geen telemetrie.
 - **Geld in centen.** Bedragen zijn altijd integers in centen, nooit floats.
-- **Bestaande databases blijven werken.** Schemawijzigingen zijn additief
-  (`CREATE TABLE IF NOT EXISTS`, nieuwe instellingen via `setdefault`).
+- **Bestaande databases blijven werken.** Een nieuwe tabel komt in `SCHEMA`
+  (`CREATE TABLE IF NOT EXISTS`), een nieuwe instelling via `setdefault`.
+  Een nieuwe kolom of een wijziging van bestaande gegevens is een nieuwe
+  genummerde omzetting in `MIGRATIONS` in `app/app.py`. Die draait bij
+  iedereen één keer, na een automatische back-up. Pas een omzetting die al
+  op `main` staat nooit meer aan, en voeg een test toe in
+  `tests/test_migrations.py`.
 
 ## Zo werk je
 
 1. Haal `main` op: `git switch main && git pull`.
 2. Maak een branch: `git switch -c feat/korte-omschrijving`. Prefixen:
    `feat/`, `fix/`, `docs/`, `refactor/`, `chore/`.
+   Hoort je werk bij een issue? Wijs het issue dan aan jezelf toe en maak
+   de branch vanuit het issue aan, zodat iedereen ziet wie eraan werkt en
+   welke branch erbij hoort. Dat kan op de issuepagina onder "Development"
+   ("Create a branch"), of met:
+   ```bash
+   gh issue edit 12 --add-assignee "@me"
+   gh issue develop 12 --base main --name fix/korte-omschrijving --checkout
+   ```
 3. Bouw en test lokaal met een wegwerpdatabase, zodat je eigen gegevens
    buiten schot blijven:
    ```bash
    python3 app/app.py --db /tmp/finapp-test.db --port 8766
    ```
-   Je kunt daar een geanonimiseerd testbestand in importeren.
+   Je kunt daar een geanonimiseerd testbestand in importeren, of een
+   verzonnen dataset (zie "Testen met nepdata" hieronder).
 4. Commit in kleine stappen met een duidelijke boodschap:
    `feat: vakanties per jaar tonen`, `fix: Amex-bedragen met komma parsen`.
 5. Push je branch en open een pull request. Beschrijf wat er verandert,
-   waarom, en hoe je het hebt getest.
+   waarom, en hoe je het hebt getest; het formulier van de pull request
+   geeft de kopjes. Lost je pull request een issue op, zet dan
+   `Closes #12` in de beschrijving. Het issue sluit dan vanzelf bij het
+   mergen. GitHub herkent alleen de Engelse woorden `closes`, `fixes` en
+   `resolves`; met "Sluit #12" gebeurt er niets. Bij meerdere issues
+   herhaal je het woord: `Closes #12, closes #13`.
+   Wijs ook de pull request aan jezelf toe, rechts onder "Assignees" of
+   met `gh pr create --assignee "@me"`.
+   Stop je met een issue of pull request zonder het af te maken, haal je
+   naam er dan weer af, zodat een ander het kan oppakken.
 6. Iemand anders kijkt mee en merget. Werk nooit direct op `main`: GitHub
    laat wijzigingen daar alleen toe via een pull request met een
    goedkeuring.
+
+## Testen met nepdata
+
+`tools/demo_data.py` maakt een jaar aan verzonnen transacties: salaris,
+huur, incasso's voor vaste lasten, boodschappen, een spaarrekening, een
+Amex-kaart en een vakantie in juli. Alle namen en IBAN's zijn nep (de
+IBAN's beginnen met `NL00` en zijn dus ongeldig). De bestanden komen buiten
+de repository terecht; het script weigert in de repository te schrijven.
+
+```bash
+python3 tools/demo_data.py
+python3 app/app.py --db /tmp/finapp-test.db --port 8766
+```
+
+Importeer daarna `/tmp/finapp-demo/demo-bank.xml` en
+`/tmp/finapp-demo/demo-amex.csv` via de importknop. Voeg de vakantie die
+het script noemt in de app toe om de vakantieherkenning te zien. Met
+`--eind JJJJ-MM-DD` en `--seed` krijg je steeds exact dezelfde bestanden;
+zie `python3 tools/demo_data.py --help`. Opnieuw beginnen doe je door
+`/tmp/finapp-test.db` te verwijderen.
 
 ## Commits signeren
 
@@ -120,4 +163,4 @@ Nieuwe functies bespreken we in issues, één issue per idee:
   `akkoord` (gaan we bouwen) of `later` (goed idee, nu geen prioriteit).
 - Een idee dat we niet gaan bouwen, sluiten we met een korte uitleg.
 - Na akkoord volgt voor grotere wijzigingen een plan in `docs/plans/`. De
-  pull request verwijst naar het issue.
+  pull request sluit het issue met `Closes #12` (zie "Zo werk je").

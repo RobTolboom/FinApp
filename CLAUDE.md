@@ -61,6 +61,10 @@ Na een codewijziging
 Voor een commit
 1. `git status` nalopen: staat er niets uit `data/` of een bankexport bij?
 2. `git diff --staged` lezen.
+3. `python3 tools/privacy_check.py`: zoekt in de gevolgde en gestagede
+   bestanden naar bankexports, databases en geldige IBAN's. Dezelfde
+   controle draait op GitHub bij elke pull request. Namen van personen of
+   werkgevers herkent het script niet; die blijf je zelf nalopen.
 
 Voor een push
 1. Controleren dat de branch op `main` gebaseerd is en geen conflicten heeft.
@@ -74,6 +78,21 @@ Voor een push
   committen blijft daarom ook een afspraak.
 - Werk op kortlevende topic-branches: `feat/...`, `fix/...`, `docs/...`,
   `refactor/...`, `chore/...`.
+- Hoort het werk bij een issue, maak de branch dan vanuit dat issue aan,
+  zodat hij bij het issue onder "Development" staat:
+  `gh issue develop <nr> --base main --name fix/onderwerp --checkout`.
+  Dit maakt de branch ook op GitHub aan. Lost één branch meerdere issues
+  op, koppel hem dan aan het eerste issue; de andere worden via de pull
+  request gekoppeld.
+- Wijs alles waar je aan werkt toe aan wie eraan werkt, zodat niemand er
+  dubbel aan begint en zichtbaar is wie waarmee bezig is:
+  - een issue zodra het werk begint:
+    `gh issue edit <nr> --add-assignee "@me"`;
+  - een pull request bij het openen: `gh pr create --assignee "@me"`, of
+    achteraf `gh pr edit <nr> --add-assignee "@me"`.
+  Is een issue of pull request al aan iemand anders toegewezen, vraag dan
+  eerst na. Stop je met het werk zonder het af te maken, haal de
+  toewijzing dan weg (`--remove-assignee "@me"`).
 - Conventional Commits met Nederlandse omschrijving: `feat: vakanties per
   jaar tonen`, `fix: Amex-bedragen met komma parsen`.
 - Commit in kleine, samenhangende stappen.
@@ -90,10 +109,23 @@ Voor een push
 Controleer dit één keer per pull request, niet per bewerking.
 - Een beschrijving van wat er verandert, waarom, en hoe het handmatig is
   getest (er zijn nog geen geautomatiseerde tests).
+- Een koppeling met elk issue dat de pull request oplost, zodat het issue
+  bij het mergen vanzelf sluit. Zet in de beschrijving per issue een
+  Engels sleutelwoord: `Closes #12, closes #13`. GitHub herkent alleen
+  `closes`, `fixes` en `resolves`; "Sluit #12" koppelt niets. Controleer
+  na het openen dat alle issues gekoppeld zijn:
+  `gh pr view <nr> --json closingIssuesReferences`.
+- Een issue dat de pull request alleen raakt maar niet oplost, noem je
+  zonder sleutelwoord: `Zie #12`.
 - `README.md` alleen bijwerken als de tekst daar niet meer klopt.
-- Bij schemawijzigingen: het schema is additief (`CREATE TABLE IF NOT
-  EXISTS`, `setdefault` voor instellingen, `RENAMES` voor categorieën),
-  zodat bestaande databases zonder handwerk blijven werken.
+- Bij schemawijzigingen: bestaande databases blijven zonder handwerk
+  werken. Een nieuwe tabel komt in `SCHEMA` (`CREATE TABLE IF NOT
+  EXISTS`), een instelling via `setdefault`, een hernoemde categorie in
+  `RENAMES`. Een nieuwe kolom of een wijziging van bestaande gegevens is
+  een nieuwe functie achteraan in `MIGRATIONS` (`app/app.py`), met de
+  kolom ook in `SCHEMA` en een test in `tests/test_migrations.py`. De app
+  maakt vóór het omzetten zelf een back-up en houdt de versie bij in
+  `PRAGMA user_version`.
 
 ## 6. Rapporteren
 
@@ -138,6 +170,9 @@ internet.
 - Transactie-`uid`s zijn hashes van de inhoud; ze maken dubbele imports
   onschadelijk. Wijzig de hash-invoer in `parsers.py` niet zonder
   migratie, anders worden alle bestaande transacties als nieuw gezien.
+- Een omzetting in `MIGRATIONS` die op `main` staat, wordt nooit meer
+  aangepast of verwijderd: databases die haar al hebben gehad, zien de
+  wijziging niet. Een correctie is een nieuwe omzetting.
 - `rules.py` moet algemeen bruikbaar blijven: landelijke ketens, banken,
   overheid. Regels voor een werkgever, familie of eigen adres horen in de
   app als tegenpartij-regel (tabel `merchant_rules`) en staan dan alleen

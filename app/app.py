@@ -16,6 +16,7 @@ import json
 import re
 import os
 import sqlite3
+import stat
 import sys
 import threading
 import unicodedata
@@ -49,7 +50,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     uid TEXT PRIMARY KEY, source TEXT, account TEXT, date TEXT, amount INTEGER,
     counterparty TEXT, counterparty_iban TEXT, description TEXT, tx_type TEXT,
     creditor_id TEXT, mandate_id TEXT, cardholder TEXT, foreign_amt TEXT,
-    merchant_key TEXT, import_id INTEGER
+    merchant_key TEXT, import_id INTEGER, country TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_tx_date ON transactions(date);
 CREATE TABLE IF NOT EXISTS imports (
@@ -73,6 +74,34 @@ CREATE TABLE IF NOT EXISTS mortgage_parts (id INTEGER PRIMARY KEY AUTOINCREMENT,
 CREATE TABLE IF NOT EXISTS mortgage_rates (part_id INTEGER, date TEXT, rate REAL, PRIMARY KEY (part_id, date));
 CREATE TABLE IF NOT EXISTS mortgage_corrections (part_id INTEGER, date TEXT, balance INTEGER, PRIMARY KEY (part_id, date));
 """
+
+
+
+class DatabaseFout(Exception):
+    """De database kan niet worden geopend of omgezet; de tekst is bedoeld voor de gebruiker."""
+
+
+def _migrate_1(c):
+    """Wat de app tot versie 1 bij elke start deed."""
+    cols = {r[1] for r in c.execute("PRAGMA table_info(transactions)")}
+    if "country" not in cols:
+        c.execute("ALTER TABLE transactions ADD COLUMN country TEXT DEFAULT ''")
+    # plaatsnaam in het naamveld van kaartbetalingen herstellen
+    for r in c.execute("SELECT uid, counterparty, description FROM transactions "
+                       "WHERE source='bank' AND merchant_key NOT LIKE 'INC|%'").fetchall():
+        fixed = parsers.card_merchant(r["counterparty"], r["description"])
+        if fixed:
+            c.execute("UPDATE transactions SET counterparty=?, merchant_key=? WHERE uid=?",
+                      (fixed.strip(), parsers.normalize_name(fixed), r["uid"]))
+
+
+# Omzettingen van bestaande gegevens, op volgorde: functie n brengt de database van versie n-1
+# naar versie n (PRAGMA user_version). Elke functie draait één keer, in een transactie, nadat
+# er een back-up is gemaakt. SCHEMA is dan al toegepast, dus nieuwe tabellen bestaan al (leeg).
+# Een nieuwe tabel hoort in SCHEMA; een nieuwe kolom of een wijziging van bestaande gegevens is
+# een nieuwe functie hier, met de kolom ook in SCHEMA voor nieuwe databases. Pas een functie
+# die op main staat nooit meer aan: databases die haar al hebben gehad, zien de wijziging niet.
+MIGRATIONS = [_migrate_1]
 
 LABEL_COLORS = ["#3a6fb3", "#c46a24", "#2e8b57", "#8f3f71", "#b8860b", "#56a3a6", "#9d4b4b", "#6b6fb3"]
 
@@ -108,19 +137,10 @@ class Store:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.lock = threading.Lock()
+        self.migrated_from = None       # versie van voor het omzetten, als er bij deze start is omgezet
+        self.backup_path = None
+        self._migrate()
         with self.conn() as c:
-            c.row_factory = sqlite3.Row
-            c.executescript(SCHEMA)
-            cols = {r[1] for r in c.execute("PRAGMA table_info(transactions)")}
-            if "country" not in cols:
-                c.execute("ALTER TABLE transactions ADD COLUMN country TEXT DEFAULT ''")
-            # plaatsnaam in het naamveld van kaartbetalingen herstellen
-            for r in c.execute("SELECT uid, counterparty, description FROM transactions "
-                               "WHERE source='bank' AND merchant_key NOT LIKE 'INC|%'").fetchall():
-                fixed = parsers.card_merchant(r["counterparty"], r["description"])
-                if fixed:
-                    c.execute("UPDATE transactions SET counterparty=?, merchant_key=? WHERE uid=?",
-                              (fixed.strip(), parsers.normalize_name(fixed), r["uid"]))
             for old, new in getattr(default_rules, "RENAMES", {}).items():
                 if c.execute("SELECT 1 FROM categories WHERE name=?", (old,)).fetchone():
                     c.execute("DELETE FROM categories WHERE name=?", (old,))
@@ -135,6 +155,72 @@ class Store:
         c = sqlite3.connect(str(self.path))
         c.row_factory = sqlite3.Row
         return c
+
+    # ------------------------------------------------------------ schema
+    def _migrate(self):
+        """Brengt de database naar de versie van de code, met een back-up vooraf."""
+        latest = len(MIGRATIONS)
+        c = sqlite3.connect(str(self.path), isolation_level=None)    # transacties zelf afbakenen
+        c.row_factory = sqlite3.Row
+        try:
+            version = c.execute("PRAGMA user_version").fetchone()[0]
+            fresh = c.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone() is None
+            if version > latest:
+                raise DatabaseFout(
+                    "De database %s heeft versie %d, deze versie van FinApp kent versie %d. De database "
+                    "is door een nieuwere FinApp omgezet; werk de code bij." % (self.path, version, latest))
+            if fresh:
+                c.executescript(SCHEMA)
+                c.execute("PRAGMA user_version = %d" % latest)
+                return
+            if version < latest:
+                self.backup_path = self._backup(c, version)
+                self.migrated_from = version
+            c.executescript(SCHEMA)
+            for v in range(version + 1, latest + 1):
+                c.execute("BEGIN IMMEDIATE")
+                try:
+                    MIGRATIONS[v - 1](c)
+                    c.execute("PRAGMA user_version = %d" % v)
+                    c.execute("COMMIT")
+                except Exception as e:
+                    if c.in_transaction:
+                        c.execute("ROLLBACK")
+                    raise DatabaseFout(
+                        "Het omzetten van de database naar versie %d is mislukt (%s: %s). De database is "
+                        "niet gewijzigd en staat nog op versie %d. Back-up: %s"
+                        % (v, type(e).__name__, e, v - 1, self.backup_path)) from e
+        finally:
+            c.close()
+
+    def _backup(self, c, version):
+        """Kopie van de database naast het origineel; geeft het pad terug."""
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        target = self.path.with_name("%s.backup-v%d-%s.db" % (self.path.stem, version, stamp))
+        n = 1
+        while target.exists():
+            n += 1
+            target = self.path.with_name("%s.backup-v%d-%s-%d.db" % (self.path.stem, version, stamp, n))
+        try:
+            dst = sqlite3.connect(str(target))
+            try:
+                c.backup(dst)
+                ok = dst.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+            finally:
+                dst.close()
+            if not ok:
+                raise sqlite3.DatabaseError("de kopie is beschadigd")
+            os.chmod(str(target), stat.S_IMODE(os.stat(str(self.path)).st_mode))
+        except (sqlite3.Error, OSError) as e:
+            try:
+                target.unlink()         # geen halve kopie laten staan die op een back-up lijkt
+            except OSError:
+                pass
+            raise DatabaseFout(
+                "Er kon geen back-up van de database worden gemaakt (%s: %s), dus er is niets omgezet. "
+                "Controleer de schijfruimte en de schrijfrechten op %s."
+                % (type(e).__name__, e, self.path.parent)) from e
+        return target
 
     # ------------------------------------------------------------ lezen
     def settings(self):
@@ -757,7 +843,13 @@ def main():
                  "Zet FINAPP_PASSWORD (gebruikersnaam via FINAPP_USER, standaard 'finapp').\n"
                  "Wil je bewust zonder wachtwoord draaien, zet dan FINAPP_NO_PASSWORD=1.")
 
-    store = Store(a.db)
+    try:
+        store = Store(a.db)
+    except DatabaseFout as e:
+        sys.exit("FinApp start niet: %s" % e)
+    if store.migrated_from is not None:
+        print("Database omgezet van versie %d naar %d." % (store.migrated_from, len(MIGRATIONS)))
+        print("Back-up van voor het omzetten: %s" % store.backup_path)
     port = int(os.environ.get("FINAPP_PORT") or a.port)
     for attempt in range(1 if lan else 10):
         try:

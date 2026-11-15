@@ -31,6 +31,21 @@ Opties:
 python3 app/app.py --port 8765 --db /pad/naar/finapp.db --no-browser
 ```
 
+### Bijwerken en back-ups
+
+Vraagt een nieuwe versie van FinApp om een aanpassing van je database, dan
+gebeurt dat vanzelf bij de eerstvolgende start. Vlak daarvoor maakt de app
+een kopie naast de database, bijvoorbeeld
+`finapp.backup-v1-20261115-203000.db`, en meldt in de terminal waar die
+staat. Gaat het omzetten mis, dan blijft je database zoals hij was en
+start de app niet.
+
+De app gooit deze kopieën niet weg; dat doe je zelf als alles goed werkt.
+Ze bevatten al je gegevens, dus behandel ze net als de database zelf.
+
+Een database die al is omgezet, werkt niet meer met een oudere versie van
+de code. De app meldt dat bij het starten; werk dan de code bij.
+
 ## Draaien in Docker (bijvoorbeeld op een Synology NAS)
 
 De meegeleverde `docker-compose.yml` gebruikt het standaard `python:3.12-slim`
