@@ -64,7 +64,8 @@ maken we onderling afspraken buiten deze repository om.
    ```bash
    python3 app/app.py --db /tmp/finapp-test.db --port 8766
    ```
-   Je kunt daar een geanonimiseerd testbestand in importeren.
+   Je kunt daar een geanonimiseerd testbestand in importeren, of een
+   verzonnen dataset (zie "Testen met nepdata" hieronder).
 4. Commit in kleine stappen met een duidelijke boodschap:
    `feat: vakanties per jaar tonen`, `fix: Amex-bedragen met komma parsen`.
 5. Push je branch en open een pull request. Beschrijf wat er verandert,
@@ -72,6 +73,26 @@ maken we onderling afspraken buiten deze repository om.
 6. Iemand anders kijkt mee en merget. Werk nooit direct op `main`: GitHub
    laat wijzigingen daar alleen toe via een pull request met een
    goedkeuring.
+
+## Testen met nepdata
+
+`tools/demo_data.py` maakt een jaar aan verzonnen transacties: salaris,
+huur, incasso's voor vaste lasten, boodschappen, een spaarrekening, een
+Amex-kaart en een vakantie in juli. Alle namen en IBAN's zijn nep (de
+IBAN's beginnen met `NL00` en zijn dus ongeldig). De bestanden komen buiten
+de repository terecht; het script weigert in de repository te schrijven.
+
+```bash
+python3 tools/demo_data.py
+python3 app/app.py --db /tmp/finapp-test.db --port 8766
+```
+
+Importeer daarna `/tmp/finapp-demo/demo-bank.xml` en
+`/tmp/finapp-demo/demo-amex.csv` via de importknop. Voeg de vakantie die
+het script noemt in de app toe om de vakantieherkenning te zien. Met
+`--eind JJJJ-MM-DD` en `--seed` krijg je steeds exact dezelfde bestanden;
+zie `python3 tools/demo_data.py --help`. Opnieuw beginnen doe je door
+`/tmp/finapp-test.db` te verwijderen.
 
 ## Commits signeren
 
