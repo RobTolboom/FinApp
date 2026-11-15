@@ -241,9 +241,10 @@ class Store:
     # ------------------------------------------------------------ hypotheek
     def _mortgage(self, parts, rates, corrs):
         today = date.today().isoformat()[:7]
-        out, repay, interest, bal_total = [], {}, {}, {}
+        out, repay, interest, bal_total, terms = [], {}, {}, {}, {}
         if not parts:
-            return {"parts": [], "repay_by_month": {}, "interest_by_month": {}, "monthly_balance": {}}
+            return {"parts": [], "repay_by_month": {}, "interest_by_month": {}, "monthly_balance": {},
+                    "terms_by_month": {}}
         first = min(p["start"][:7] for p in parts)
         months = _months(first, today)
         for p in parts:
@@ -253,6 +254,8 @@ class Store:
             for row in sched:
                 repay[row["month"]] = repay.get(row["month"], 0) + row["repayment"]
                 interest[row["month"]] = interest.get(row["month"], 0) + row["interest"]
+                # per leningdeel, voor de splitsing van de afschrijvingen
+                terms.setdefault(row["month"], []).append((row["interest"] + row["repayment"], row["repayment"]))
             for mk in months:
                 b = mortgage.balance_at(p, sched, mk, pc)
                 if b is not None:
@@ -273,26 +276,32 @@ class Store:
                 "rate_now": ([r["rate"] for r in sorted(pr, key=lambda r: r["date"]) if r["date"][:7] <= today] or [p["rate"]])[-1],
             })
             out.append(q)
-        return {"parts": out, "repay_by_month": repay, "interest_by_month": interest, "monthly_balance": bal_total}
+        return {"parts": out, "repay_by_month": repay, "interest_by_month": interest, "monthly_balance": bal_total,
+                "terms_by_month": terms}
 
     def _split_mortgage(self, txs, mort, pattern, cat_of):
         """Splitst de hypotheektermijn op de bankrekening in rente (blijft een
-        uitgave onder Wonen) en aflossing (vermogensopbouw, telt niet mee)."""
+        uitgave onder Wonen) en aflossing (vermogensopbouw, telt niet mee).
+        Bij meerdere afschrijvingen in een maand krijgt elke afschrijving de
+        aflossing van haar eigen leningdelen (zie mortgage.split_repayments)."""
         try:
             rx = re.compile(pattern, re.I)
         except re.error:
             rx = re.compile("HYPOTHE", re.I)
-        done, out = set(), []
+        by_month = {}
+        for t in sorted(txs, key=lambda t: (t["date"], t["uid"])):
+            if (t["source"] == "bank" and t["amount"] < 0 and t["category"] == "Wonen"
+                    and rx.search("%s %s" % (t["counterparty"], t["description"]))):
+                by_month.setdefault(t["date"][:7], []).append(t)
+        reps = mortgage.split_repayments({m: [-t["amount"] for t in ts] for m, ts in by_month.items()},
+                                         mort["terms_by_month"])
+        rep_of = {t["uid"]: r for m, ts in by_month.items() for t, r in zip(ts, reps.get(m, ()))}
+        out = []
         for t in txs:
             out.append(t)
-            mk = t["date"][:7]
-            if (t["source"] != "bank" or t["amount"] >= 0 or t["category"] != "Wonen" or mk in done
-                    or not rx.search("%s %s" % (t["counterparty"], t["description"]))):
-                continue
-            rep = min(mort["repay_by_month"].get(mk, 0), -t["amount"])
+            rep = rep_of.get(t["uid"], 0)
             if rep <= 0:
                 continue
-            done.add(mk)
             t["orig_amount"] = t["amount"]
             t["split_repayment"] = rep
             t["amount"] = t["amount"] + rep

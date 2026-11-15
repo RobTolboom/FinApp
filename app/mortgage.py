@@ -95,3 +95,108 @@ def balance_at(part, sched, month, corrections=()):
         else:
             break
     return last if last is not None else 0
+
+
+# ---------------------------------------------------------------- splitsing
+
+# Een afschrijving hoort bij leningdelen als het bedrag zo dicht bij hun
+# berekende termijn ligt: 2%, met een ondergrens van 5 euro.
+FIT_RATIO = 0.02
+FIT_MIN = 500
+# Bovengrens voor het aantal verdelingen dat per maand wordt doorgerekend.
+MAX_COMBINATIONS = 100000
+
+
+def _fits(amount, expected):
+    return abs(amount - expected) <= max(FIT_MIN, FIT_RATIO * amount)
+
+
+def _assign(payments, terms):
+    """Verdeelt termijnen (payment, repayment) over afschrijvingen zodat de
+    bedragen passen. Geeft per termijn de index van haar afschrijving, of
+    None voor een termijn die nergens bij past."""
+    k, n = len(payments), len(terms)
+    none = [None] * n
+    if not k or not n or (k + 1) ** n > MAX_COMBINATIONS:
+        return none
+    best, best_score = None, None
+    choice = [0] * n          # per termijn: index van de afschrijving, k = niet toegewezen
+    while True:
+        total = [0] * k
+        for i, c in enumerate(choice):
+            if c < k:
+                total[c] += terms[i][0]
+        used = set(c for c in choice if c < k)
+        if used and all(_fits(payments[j], total[j]) for j in used):
+            score = (sum(1 for c in choice if c < k), -sum(abs(payments[j] - total[j]) for j in used))
+            if best_score is None or score > best_score:
+                best, best_score = list(choice), score
+        # volgende verdeling
+        i = 0
+        while i < n and choice[i] == k:
+            choice[i] = 0
+            i += 1
+        if i == n:
+            break
+        choice[i] += 1
+    return [c if c < k else None for c in best] if best else none
+
+
+def split_repayments(payments, terms):
+    """Bepaalt per hypotheekafschrijving hoeveel ervan aflossing is.
+
+    payments: {maand: [bedrag, ...]} met de afschrijvingen als positieve centen.
+    terms:    {maand: [(termijn, aflossing), ...]} per leningdeel volgens het schema.
+    Geeft {maand: [aflossing per afschrijving, ...]} in dezelfde volgorde.
+
+    1. Per maand krijgt elke afschrijving de aflossing van de leningdelen
+       waar haar bedrag bij past.
+    2. Een termijn die overblijft gaat naar een overgebleven afschrijving in
+       de volgende of vorige maand als het bedrag daar past (verschoven
+       incasso).
+    3. Wat dan nog overblijft wordt naar rato verdeeld over de overgebleven
+       afschrijvingen van dezelfde maand.
+    """
+    months = sorted(m for m in payments if payments[m])
+    if not months:
+        return {}
+    reps = {m: [0] * len(payments[m]) for m in months}
+    free = {m: list(range(len(payments[m]))) for m in months}    # afschrijvingen zonder termijn
+    left = {}                                                    # termijnen zonder afschrijving
+
+    def place(m, items, target):
+        """Koppelt termijnen aan de vrije afschrijvingen van maand 'target';
+        geeft de termijnen terug die overblijven."""
+        idx = free.get(target, [])
+        choice = _assign([payments[target][j] for j in idx], items)
+        rest = []
+        for item, c in zip(items, choice):
+            if c is None:
+                rest.append(item)
+            else:
+                reps[target][idx[c]] += item[1]
+        free[target] = [j for n, j in enumerate(idx) if n not in set(c for c in choice if c is not None)]
+        return rest
+
+    m, last = _add(months[0], -1), _add(months[-1], 1)
+    span = []
+    while m <= last:
+        span.append(m)
+        m = _add(m, 1)
+    for m in span:
+        items = [t for t in terms.get(m, ()) if t[0] > 0]
+        left[m] = place(m, items, m) if items else []
+    for m in span:
+        for target in (_add(m, 1), _add(m, -1)):
+            if left[m] and free.get(target):
+                left[m] = place(m, left[m], target)
+    for m in months:
+        total = sum(t[1] for t in left[m])
+        paid = sum(payments[m][j] for j in free[m])
+        rest = total
+        for n, j in enumerate(free[m]):
+            r = rest if n == len(free[m]) - 1 else int(round(total * payments[m][j] / paid))
+            r = max(0, min(r, rest))
+            reps[m][j] += r
+            rest -= r
+    return {m: [max(0, min(r, p)) for r, p in zip(reps[m], payments[m])] for m in months}
