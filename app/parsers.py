@@ -174,6 +174,12 @@ def parse_camt053(data):
                 cp_iban = t(det, "c:RltdPties/c:DbtrAcct/c:Id/c:IBAN")
                 cid = ""
             rmt = t(det, "c:RmtInf/c:Ustrd") or t(ntry, "c:AddtlNtryInf")
+            # Gestructureerd betalingskenmerk alleen in de getoonde omschrijving:
+            # rmt zit in de hash voor de uid en moet daarom gelijk blijven.
+            ref = t(det, "c:RmtInf/c:Strd/c:CdtrRefInf/c:Ref")
+            description = rmt
+            if ref and ref not in rmt:
+                description = ("%s  Betalingskenmerk %s" % (rmt, ref)).strip()
 
             # Werkelijke transactiedatum bij pinbetalingen
             dd = _DD_RE.search(rmt)
@@ -210,7 +216,7 @@ def parse_camt053(data):
 
             txs.append(_tx(
                 uid=uid, source="bank", account=iban, date=date, amount=cents,
-                counterparty=display, counterparty_iban=cp_iban, description=rmt,
+                counterparty=display, counterparty_iban=cp_iban, description=description,
                 tx_type=tx_type, creditor_id=cid, mandate_id=mndt, merchant_key=key,
             ))
     if not txs:
