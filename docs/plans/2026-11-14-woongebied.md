@@ -1,12 +1,12 @@
 # Woongebied in plaats van een vaste plaatsenlijst
 
-Datum: 2026-11-14
+Datum: 2026-11-14, herzien op 2026-11-15
 Branch: `feat/woongebied`
-Status: voorstel, nog niet goedgekeurd
+Status: goedgekeurd op 2026-11-15
 Issue: #51
-Afhankelijk van: #49, branch `feat/instellingen-tabs` (de subtab Woongebied)
 Mock: scherm "3. Woongebied-editor" in
-<https://claude.ai/artifact/KtMnNFZqaWZQr9S5hP7jZX>
+<https://claude.ai/artifact/KtMnNFZqaWZQr9S5hP7jZX> (van vóór de herziening;
+de standaardlijst en de tweede schakelaar daarin vervallen)
 
 ## Doel
 
@@ -18,147 +18,208 @@ komen nu uit twee bronnen:
   naast grote steden ook kleine dorpen en afgekapte namen. Die lijst is op
   eigen transacties gebaseerd en hoort niet in de gedeelde code.
 - automatisch leren: een plaats waar buiten vakanties in minstens 3
-  verschillende maanden is gepind. Dat gebeurt onzichtbaar.
+  verschillende maanden is gepind. Dat gebeurt onzichtbaar en is niet te
+  corrigeren.
 
-Na dit plan levert de app alleen de 20 grootste woonplaatsen van Nederland
-mee als data. De gebruiker beheert het woongebied zelf in een editor, ziet
-welke plaatsen zijn bijgeleerd en kan het uitsluiten en het leren aan- en
-uitzetten.
+Na dit plan staat er geen plaatsnaam meer in de code. Het woongebied
+bestaat uit de plaatsen die de app leert en de plaatsen die de gebruiker
+zelf toevoegt. De gebruiker ziet in een editor welke plaatsen meetellen,
+kan plaatsen toevoegen en weghalen, en kan het leren uitzetten.
+
+## Wijzigingen ten opzichte van het eerste voorstel
+
+Besloten op 2026-11-15:
+
+- **Geen meegeleverde lijst van 20 steden.** Thuis is voor iedereen
+  anders, en de lijst liet zich niet verifiëren. Daarmee vervallen
+  `app/default_places.json`, de herkomst "standaard", de aliassen en de
+  knop "Standaardlijst herstellen".
+- **Eén schakelaar** (automatisch bijleren). De schakelaar "thuisplaatsen
+  uitsluiten" vervalt: uitzetten is hetzelfde als een lege lijst met het
+  leren uit.
+- **Het leren wordt strenger** (zie "Leren").
+- **Plaats toevoegen door te kiezen** uit de plaatsen in de eigen
+  transacties.
+- **Geautomatiseerde tests.**
 
 ## Omvang
 
-### Data uit de code
+### Opslag (geen schemawijziging, geen omzetting)
 
-- `app/default_places.json`: de 20 grootste woonplaatsen, elk met een naam
-  en optionele aliassen (bijvoorbeeld Den Haag met `'s-Gravenhage`).
-- `NL_CITIES` verdwijnt uit `app/engine.py`.
-- Een straal rond een plaats valt buiten dit plan, en daarmee ook een
-  databestand met coördinaten.
+Drie sleutels in de bestaande tabel `settings`, met `setdefault`:
 
-### Opslag (geen schemawijziging)
+| Sleutel       | Standaard | Betekenis                                    |
+|---------------|-----------|----------------------------------------------|
+| `home_learn`  | `true`    | plaatsen automatisch bijleren                |
+| `home_places` | `[]`      | zelf toegevoegde plaatsen                    |
+| `never_learn` | `[]`      | plaatsen die nooit worden bijgeleerd         |
 
-Vier sleutels in de bestaande tabel `settings`, met `setdefault`:
-
-| Sleutel        | Standaard                       | Betekenis                                  |
-|----------------|---------------------------------|--------------------------------------------|
-| `home_exclude` | `true`                          | thuisplaatsen uitsluiten bij vakanties     |
-| `home_learn`   | `true`                          | plaatsen automatisch bijleren              |
-| `home_places`  | de lijst uit `default_places.json` | `[{name, aliases, origin}]`, `origin` is `standard` of `own` |
-| `never_learn`  | `[]`                            | plaatsen die nooit worden bijgeleerd       |
-
+- Plaatsnamen worden genormaliseerd opgeslagen (zie "Herkennen").
 - Geleerde plaatsen worden niet opgeslagen. Ze worden zoals nu bij elke
-  berekening afgeleid (`Categorizer.prepare`), minus de lijst `never_learn`.
-- Een geleerde plaats "vastzetten" voegt hem toe aan `home_places` als
-  `own`; "nooit leren" zet hem op `never_learn`.
-- "Standaardlijst herstellen" voegt de ontbrekende standaardplaatsen weer
-  toe en laat eigen plaatsen staan.
+  berekening afgeleid in `Categorizer.prepare`.
+- Een geleerde plaats "vastzetten" voegt hem toe aan `home_places`. Hij
+  blijft dan thuis, ook als het leren uit staat of de plaats later onder
+  de drempel zakt.
+- "Nooit leren" zet een plaats op `never_learn`. Een plaats kan niet
+  tegelijk in `home_places` en op `never_learn` staan: toevoegen aan de
+  ene lijst haalt hem van de andere.
+
+### Leren
+
+Een plaats is geleerd als er buiten de opgegeven vakanties in minstens 3
+verschillende maanden een betaling ter plaatse is gedaan. Dat blijft zo.
+Nieuw is welke betalingen meetellen:
+
+- bank: alleen pinbetalingen, zoals nu;
+- Amex: niet als het land is ingevuld en niet Nederland is. Is het land
+  leeg (transacties van vóór de kolom `country`), dan telt de betaling
+  mee, zoals nu;
+- geen betalingen die als online worden herkend (het bestaande patroon
+  `ONLINE` in `Categorizer`).
+
+Reden: een abonnement dat via een buitenlandse stad wordt afgerekend,
+maakt die stad nu na drie maanden thuis. Een vakantie daar telt dan niet
+als vakantie.
+
+Staat `home_learn` uit, dan telt alleen `home_places`. Plaatsen op
+`never_learn` worden overgeslagen.
+
+De drempel van 3 maanden blijft vast.
 
 ### Herkennen van plaatsnamen
 
-- Vergelijken in hoofdletters, na normaliseren van apostrofs en dubbele
-  spaties (`'s-Gravenhage` → `S-GRAVENHAGE`, zoals in de transacties).
-- Een plaats in een transactie past bij een woongebied-plaats als:
-  - de naam of een alias exact gelijk is; of
-  - de transactienaam is afgekapt: minstens 8 tekens, en het begin van de
-    naam of alias (`S-HERTOGENBO` past bij `S-HERTOGENBOSCH`); of
-  - de transactienaam begint met de naam plus een spatie (een toevoeging
-    zoals een provinciecode).
+- Normaliseren: hoofdletters, apostrofs weg, dubbele spaties samengevoegd
+  (`'s-Gravenhage` wordt `S-GRAVENHAGE`, zoals de bank het schrijft).
+- Een plaats in een transactie hoort bij het woongebied als:
+  - de naam exact gelijk is aan een plaats in het woongebied; of
+  - de naam in de transactie is afgekapt: minstens 8 tekens en het begin
+    van een plaats in het woongebied (`S-HERTOGENBO` past bij
+    `S-HERTOGENBOSCH`); of
+  - de naam in de transactie begint met een plaats in het woongebied plus
+    een spatie (een toevoeging zoals een provinciecode).
 
-### Woongebied-editor (subtab Woongebied)
+Geleerde plaatsen hebben de schrijfwijze van de bank al en passen dus
+vrijwel altijd exact. De twee ruimere regels zijn er voor getypte namen.
 
-- Twee schakelaars: "Plaatsen in mijn woongebied uitsluiten bij vakanties"
-  en "Plaatsen automatisch bijleren" (met de uitleg over 3 maanden).
-- Eén lijst met alle plaatsen en hun herkomst (standaard, zelf toegevoegd,
-  geleerd), het aantal maanden waarin er is gepind, en filters per herkomst.
-  - standaard: verwijderen
-  - zelf toegevoegd: wijzigen, verwijderen
-  - geleerd: vastzetten, nooit leren
-- Plaats toevoegen: een tekstveld, met de uitleg over afgekapte namen.
-- Een blok "Nooit leren" met de knop "weer toestaan".
-- De knop "Standaardlijst herstellen".
+### Woongebied-editor (subtab Woongebied van Instellingen)
+
+- Korte uitleg: wat het woongebied doet en hoe het leren werkt.
+- De schakelaar "Plaatsen automatisch bijleren".
+- Eén lijst "Mijn woongebied" met per plaats de herkomst (zelf toegevoegd
+  of geleerd) en het aantal maanden waarin er is betaald.
+  - zelf toegevoegd: verwijderen;
+  - geleerd: vastzetten, nooit leren.
+- Plaats toevoegen: een tekstveld met suggesties uit de plaatsen die in de
+  eigen transacties voorkomen, elk met het aantal maanden. Zelf typen kan
+  ook.
+- Een blok "Nooit leren" met per plaats "weer toestaan".
 - De subtab Vakanties verwijst in de uitleg naar het woongebied.
 
 ### API
 
-- `GET /api/data` levert `home`: de schakelaars, `home_places`,
-  `never_learn` en de geleerde plaatsen met het aantal maanden.
-- `POST /api/home` met `action`: `set` (schakelaars), `add`, `rename`,
-  `remove`, `pin` (geleerd → eigen), `never_learn`, `allow`,
-  `restore_defaults`.
+- `GET /api/data` levert `home`:
+  - `learn`: de schakelaar;
+  - `places`: de zelf toegevoegde plaatsen;
+  - `never_learn`;
+  - `seen`: de plaatsen uit de transacties die bij het leren meetellen,
+    elk met het aantal maanden en of de plaats nu geleerd is.
+- `POST /api/home` met `action`: `set_learn`, `add`, `remove`,
+  `never_learn`, `allow`. "Vastzetten" is `add`.
+- Controle op invoer: een naam is niet leeg en hooguit 40 tekens; hooguit
+  200 plaatsen per lijst.
 
-### De 20 grootste woonplaatsen
+### Bestanden
 
-Voorlopige lijst, **nog niet geverifieerd**:
+- `app/engine.py`: `NL_CITIES` weg; `Categorizer` krijgt de drie
+  instellingen mee; `prepare` houdt per plaats het aantal maanden bij en
+  past de nieuwe regels voor het leren toe; één functie die bepaalt of een
+  plaats bij het woongebied hoort.
+- `app/app.py`: de drie instellingen, `home` in `GET /api/data`, de route
+  `POST /api/home`.
+- `app/static/app.js` en `style.css`: de subtab Woongebied; verwijzing
+  vanuit Vakanties.
+- `tests/test_home.py`: nieuw.
+- `tools/telling.py`: nieuw, zie "De bestaande installatie".
+- `CLAUDE.md`: de regel over `engine.py` in de architectuur aanvullen.
 
-Amsterdam, Rotterdam, Den Haag (alias `'s-Gravenhage`), Utrecht, Eindhoven,
-Groningen, Tilburg, Almere, Breda, Nijmegen, Apeldoorn, Haarlem, Arnhem,
-Enschede, Amersfoort, Zwolle, 's-Hertogenbosch (alias `Den Bosch`), Leiden,
-Zoetermeer, Maastricht.
-
-Twijfelgevallen rond plaats 18–22: Dordrecht, Leeuwarden, Zaandam,
-Hoofddorp. Let op het verschil tussen woonplaats en gemeente (Zaandam en
-Zaanstad, Hoofddorp en Haarlemmermeer). De CBS-tabel "Woonplaatsen in
-Nederland" bevat geen inwonertallen. De lijst moet daarom worden getoetst
-aan een bron met inwoners per woonplaats, bijvoorbeeld de
-BAG-woonplaatsen gecombineerd met CBS-cijfers per buurt.
-
-Buiten de omvang: een straal rond een plaats, coördinaten, plaatsen in het
-buitenland, en de drempel van 3 maanden instelbaar maken.
+Buiten de omvang: een straal rond een plaats, coördinaten, de drempel
+instelbaar maken, en een eigen thuisland anders dan Nederland voor Amex.
 
 ## Takenlijst
 
-- [ ] De lijst van 20 woonplaatsen verifiëren en `app/default_places.json`
-      maken.
-- [ ] `app/engine.py`: `NL_CITIES` weghalen; `Categorizer` krijgt de
-      woongebied-instellingen mee; de herkenningsregels voor plaatsnamen
-      hierboven; `prepare` houdt per plaats het aantal maanden bij en slaat
-      `never_learn` over; `home_exclude` en `home_learn` respecteren.
-- [ ] `app/app.py`: de vier instellingen met `setdefault`, `home` in
-      `GET /api/data`, route `POST /api/home`.
-- [ ] `app/static/app.js` en `style.css`: subtab Woongebied volgens de
-      mock; verwijzing vanuit Vakanties.
-- [ ] `CLAUDE.md` bijwerken waar nodig (architectuur, `engine.py`).
-- [ ] Controles: `py_compile`; testen met een wegwerpdatabase en
-      verzonnen transacties: een vakantie met pinbetalingen in een
-      standaardplaats, een geleerde plaats, een eigen plaats, een afgekapte
-      naam en een plaats op `never_learn`; beide schakelaars uit en aan;
-      standaardlijst herstellen.
+1. `app/engine.py`: normaliseren en herkennen van plaatsnamen, het leren
+   met de nieuwe regels, `NL_CITIES` weg.
+2. `tests/test_home.py`.
+3. `app/app.py`: instellingen, `home` in de data, `POST /api/home`.
+4. `app/static/app.js` en `style.css`: de subtab.
+5. `tools/telling.py`.
+6. `CLAUDE.md` bijwerken.
+7. Controles, zie "Acceptatiecriteria".
 
-## Advies voor de bestaande installatie
+## De bestaande installatie
 
-Er is één bestaande database. De vaste lijst krimpt van ongeveer 80 naar
-20 plaatsen. Plaatsen die daardoor wegvallen en niet worden bijgeleerd,
-kunnen oude vakantietransacties anders laten categoriseren.
+Er is één bestaande database. De vaste lijst van ongeveer 80 plaatsen
+verdwijnt. Plaatsen waar vaak wordt gepind, worden vanzelf geleerd.
+Plaatsen uit de oude lijst waar zelden wordt gepind, vallen weg: een
+pinbetaling daar binnen een vakantieperiode telt na de update als
+vakantie. Door de strengere regels kunnen ook enkele eerder geleerde
+plaatsen wegvallen; dat is de bedoeling.
 
-Advies aan de eigenaar, uit te voeren na de update en apart goed te keuren:
-neem de weggevallen plaatsen eenmalig op als "zelf toegevoegd", via de
-editor of met een klein script dat niet wordt gecommit. Vergelijk vooraf
-en achteraf het aantal transacties in "Reizen & vakantie".
+De eigenaar controleert dit zelf, zonder dat de gegevens de computer
+verlaten:
+
+- `tools/telling.py` toont alleen aantallen: het aantal transacties per
+  categorie en het aantal dat door een vakantie is omgezet. Geen namen,
+  bedragen of omschrijvingen. Draaien vóór en na de update en de twee
+  uitkomsten vergelijken.
+- Is het aantal vakantietransacties gestegen, dan staan de betrokken
+  plaatsen in de editor bij de suggesties en zijn ze met één klik toe te
+  voegen.
+
+Het script is algemeen gehouden, zodat het ook bij latere wijzigingen te
+gebruiken is (bijvoorbeeld #62).
 
 ## Risico's
 
-- **Afgekapte namen** kunnen onbedoeld passen: een korte afgekapte naam kan
-  het begin van meerdere plaatsen zijn. Daarom de minimumlengte van 8
-  tekens; de editor toont welke plaatsen meetellen.
-- **Gedrag verandert voor de bestaande database.** Zie het advies
-  hierboven.
-- **Aliassen** zijn nodig voor plaatsen met twee schrijfwijzen; ontbreekt
-  er een, dan wordt die plaats niet herkend.
-- **De lijst van 20** is nog niet geverifieerd.
+- **Gedrag verandert voor de bestaande database.** Zie hierboven.
+- **Nieuwe gebruiker met weinig gegevens.** Met minder dan drie maanden
+  aan transacties is er nog niets geleerd. Dat speelt alleen binnen een
+  opgegeven vakantieperiode; de editor laat zien welke plaatsen meetellen
+  en toevoegen is één klik.
+- **Afgekapte namen** kunnen onbedoeld passen: een afgekapte naam kan het
+  begin van meerdere plaatsen zijn. Daarom de minimumlengte van 8 tekens.
+- **Vakantiebestemming die als thuis wordt geleerd.** Een plek waar je
+  elk jaar komt, in drie verschillende maanden en zonder dat die periodes
+  als vakantie zijn opgegeven, wordt geleerd. Dat was al zo; nu is het
+  zichtbaar en met "nooit leren" te corrigeren.
+- **Samenloop met #50.** Beide wijzigen `Categorizer` en voegen een subtab
+  toe. Dit plan gaat eerst.
+- **Niet getest met echte gegevens.** Alleen met verzonnen transacties.
 
 ## Acceptatiecriteria
 
-- `app/engine.py` bevat geen plaatsnamen meer.
-- Een nieuwe database begint met de 20 woonplaatsen uit
-  `default_places.json`; een bestaande database start zonder handwerk.
-- Met `home_exclude` uit tellen pinbetalingen in een vakantieperiode
-  altijd als vakantie (met de bestaande uitzonderingen: online, Amex in
-  Nederland).
-- Met `home_learn` uit worden geen plaatsen bijgeleerd.
-- Een plaats op `never_learn` wordt niet bijgeleerd; "weer toestaan" draait
-  dat terug.
-- Vastzetten maakt van een geleerde plaats een eigen plaats.
-- Afgekapte namen zoals `S-HERTOGENBO` worden herkend.
-- "Standaardlijst herstellen" voegt ontbrekende standaardplaatsen toe en
-  laat eigen plaatsen staan.
-- Geen wijziging aan `SCHEMA`.
+Geautomatiseerd, in `tests/test_home.py`, met verzonnen transacties:
+
+- een plaats met betalingen in 3 maanden buiten vakanties is geleerd; met
+  2 maanden niet;
+- betalingen binnen een vakantieperiode tellen niet mee bij het leren;
+- online betalingen en Amex-betalingen met een ander land dan Nederland
+  tellen niet mee; Amex zonder land wel;
+- met `home_learn` uit wordt niets geleerd en telt alleen `home_places`;
+- een plaats op `never_learn` wordt niet geleerd;
+- een zelf toegevoegde plaats telt als thuis, ook zonder betalingen;
+- een pinbetaling in een vakantieperiode gaat naar "Reizen & vakantie",
+  behalve in een plaats van het woongebied;
+- normaliseren, afgekapte namen (`S-HERTOGENBO`) en een toevoeging na een
+  spatie worden herkend; een afgekapte naam korter dan 8 tekens niet;
+- de acties van `POST /api/home`, inclusief de controle op invoer en het
+  wisselen tussen de twee lijsten.
+
+Handmatig:
+
+- `app/engine.py` bevat geen plaatsnamen meer;
+- een bestaande database start zonder handwerk; geen wijziging aan
+  `SCHEMA` of `MIGRATIONS`;
+- de subtab werkt met een wegwerpdatabase en de nepdata uit
+  `tools/demo_data.py`, inclusief de vakantie die het script noemt;
+- `tools/telling.py` toont alleen aantallen.
