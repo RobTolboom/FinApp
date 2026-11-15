@@ -51,8 +51,13 @@ maken we onderling afspraken buiten deze repository om.
   Wil je toch iets toevoegen, bespreek het eerst in een issue.
 - **Niets naar internet.** Geen externe API's, geen CDN's, geen telemetrie.
 - **Geld in centen.** Bedragen zijn altijd integers in centen, nooit floats.
-- **Bestaande databases blijven werken.** Schemawijzigingen zijn additief
-  (`CREATE TABLE IF NOT EXISTS`, nieuwe instellingen via `setdefault`).
+- **Bestaande databases blijven werken.** Een nieuwe tabel komt in `SCHEMA`
+  (`CREATE TABLE IF NOT EXISTS`), een nieuwe instelling via `setdefault`.
+  Een nieuwe kolom of een wijziging van bestaande gegevens is een nieuwe
+  genummerde omzetting in `MIGRATIONS` in `app/app.py`. Die draait bij
+  iedereen één keer, na een automatische back-up. Pas een omzetting die al
+  op `main` staat nooit meer aan, en voeg een test toe in
+  `tests/test_migrations.py`.
 
 ## Zo werk je
 
