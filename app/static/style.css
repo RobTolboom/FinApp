@@ -89,6 +89,13 @@ main { max-width: 1240px; margin: 0 auto; padding: 22px 28px 60px; }
 .tab { display: none; }
 .tab.active { display: block; }
 
+/* Subtabs binnen een tabblad, zoals Instellingen */
+.subtabs { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 18px; }
+.subtabs button { border-radius: 999px; padding: 5px 14px; color: var(--muted); }
+.subtabs button.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+#tab-settings .mono { overflow-wrap: anywhere; }
+.scroll-x { overflow-x: auto; }
+
 .panel {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   padding: 18px 20px; box-shadow: var(--shadow); margin-bottom: 18px;
