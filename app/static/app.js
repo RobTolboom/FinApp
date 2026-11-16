@@ -641,7 +641,7 @@ function renderNetworth() {
         ${series.length > 1 ? lineChart(series) : `<p class="muted">${assets.length
           ? `Er is nog maar één meetpunt. Voer bij <em>bijwerken</em> ook een eerdere waarde in (bijvoorbeeld per 1 januari) voor elke post, dan verschijnt hier het verloop.`
           : "Voeg bezittingen en schulden toe om het verloop te zien."}</p>`}
-        <p class="muted" style="font-size:12px;margin:8px 0 0">Tussen twee waarderingen geldt steeds de laatst ingevoerde waarde. De grafiek begint bij de maand waarin alle posten een waarde hebben.
+        <p class="muted" style="font-size:12px;margin:8px 0 0">Tussen twee waarderingen geldt steeds de laatst ingevoerde waarde. De grafiek begint bij de eerste maand waarin een rekening of post een waarde heeft; een post die later begint, telt mee vanaf zijn eerste waarde.
           Het betaalrekeningsaldo is teruggerekend vanaf het laatste eindsaldo in je bankexport.</p>
       </div>
       <div>
