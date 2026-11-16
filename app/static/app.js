@@ -1086,6 +1086,7 @@ async function importFiles(files) {
 const SETTINGS_TABS = [
   ["accounts", "Rekeningen", settingsAccounts],
   ["vacations", "Vakanties", settingsVacations],
+  ["home", "Woongebied", settingsHome],
   ["categories", "Categorieën", settingsCategories],
   ["storage", "Opslag", settingsStorage],
 ];
@@ -1137,7 +1138,8 @@ function settingsVacations() {
     <div class="panel">
       <h2>Vakantieperiodes</h2>
       <p class="muted" style="font-size:13px;margin-top:-4px">Pinbetalingen, geldopnames en buitenlandse Amex-betalingen in deze periodes gaan naar
-        <em>Reizen &amp; vakantie</em>. Vaste lasten, abonnementen en overboekingen blijven ongemoeid, en je eigen aanpassingen gaan altijd voor.</p>
+        <em>Reizen &amp; vakantie</em>. Vaste lasten, abonnementen en overboekingen blijven ongemoeid, en je eigen aanpassingen gaan altijd voor.
+        Betalingen in je <button class="link small" data-settab="home">woongebied</button> tellen niet als vakantie.</p>
       ${(S.data.vacations || []).length ? `<div class="scroll-x"><table style="margin-bottom:12px">
         <tr><th>Naam</th><th>Periode</th><th class="num">Verplaatst</th><th></th></tr>
         ${S.data.vacations.map((v) => `<tr><td>${esc(v.name)}</td><td>${fmtDate(v.start)} t/m ${fmtDate(v.end)}</td>
@@ -1150,6 +1152,55 @@ function settingsVacations() {
         <button data-addvacation="1">Toevoegen</button>
       </div>
     </div>`;
+}
+
+/* Woongebied: plaatsen waar een betaling binnen een vakantieperiode niet als
+   vakantie telt. Zelf toegevoegde plaatsen, aangevuld met wat de app leert. */
+function settingsHome() {
+  const h = S.data.home || { learn: true, places: [], never_learn: [], seen: [] };
+  const months = Object.fromEntries(h.seen.map((p) => [p.name, p.months]));
+  const own = new Set(h.places);
+  const rows = [
+    ...h.places.map((name) => ({ name, own: true })),
+    ...h.seen.filter((p) => p.learned && !own.has(p.name)).map((p) => ({ name: p.name, own: false })),
+  ].sort((a, b) => a.name.localeCompare(b.name));
+  const nMonths = (name) => (months[name] ? `${months[name]} ${months[name] === 1 ? "maand" : "maanden"}` : "–");
+  // suggesties: plaatsen uit de eigen transacties die nog niet in het woongebied staan
+  const suggest = h.seen.filter((p) => !p.learned && !own.has(p.name) && !h.never_learn.includes(p.name));
+  return `
+    <div class="panel">
+      <h2>Woongebied</h2>
+      <p class="muted" style="font-size:13px;margin-top:-4px">Binnen een vakantieperiode gaan pinbetalingen en geldopnames naar
+        <em>Reizen &amp; vakantie</em>, behalve in de plaatsen hieronder. Zo blijft een boodschap thuis, vlak voor vertrek, een gewone uitgave.</p>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-bottom:12px">
+        <input type="checkbox" id="home-learn" ${h.learn ? "checked" : ""} style="margin-top:3px">
+        <span>Plaatsen automatisch bijleren. Een plaats telt als thuis zodra je er buiten je vakanties in minstens 3 verschillende
+          maanden hebt betaald. Online betalingen en creditcardbetalingen in het buitenland tellen daarbij niet mee.</span>
+      </label>
+      ${rows.length ? `<div class="scroll-x"><table style="margin-bottom:12px">
+        <tr><th>Plaats</th><th>Herkomst</th><th class="num">Betaald in</th><th></th></tr>
+        ${rows.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.own ? "zelf toegevoegd" : "geleerd"}</td><td class="num">${nMonths(r.name)}</td>
+          <td class="num">${r.own
+            ? `<button class="link small" data-home="remove" data-place="${esc(r.name)}">verwijderen</button>`
+            : `<button class="link small" data-home="add" data-place="${esc(r.name)}" title="Blijft thuis, ook als het leren uit staat">vastzetten</button>
+               <button class="link small" data-home="never_learn" data-place="${esc(r.name)}" title="Telt niet meer als thuis en wordt niet opnieuw geleerd">nooit leren</button>`}</td></tr>`).join("")}
+      </table></div>` : `<p class="muted" style="font-size:13px">Er staan nog geen plaatsen in je woongebied.${h.learn ? " Na een paar maanden aan transacties vult de lijst zich vanzelf." : ""}</p>`}
+      <div class="row">
+        <input type="text" id="home-name" list="home-suggest" maxlength="40" placeholder="Plaats toevoegen" style="flex:1;min-width:160px" aria-label="Plaats toevoegen">
+        <datalist id="home-suggest">${suggest.map((p) => `<option value="${esc(p.name)}" label="${esc(p.name)} (${nMonths(p.name)})"></option>`).join("")}</datalist>
+        <button data-home="add" data-fromfield="1">Toevoegen</button>
+      </div>
+      <p class="muted" style="font-size:12.5px;margin-bottom:0">Kies een plaats uit je eigen transacties of typ een naam. Banken kappen lange namen af
+        (<span class="mono">S-HERTOGENBO</span>); een afgekapte naam van minstens 8 tekens wordt herkend.</p>
+    </div>
+    ${h.never_learn.length ? `<div class="panel">
+      <h2>Nooit leren</h2>
+      <p class="muted" style="font-size:13px;margin-top:-4px">Deze plaatsen tellen niet als thuis, ook als je er vaak betaalt.</p>
+      <div class="scroll-x"><table>
+        ${h.never_learn.map((name) => `<tr><td>${esc(name)}</td><td class="num">${nMonths(name)}</td>
+          <td class="num"><button class="link small" data-home="allow" data-place="${esc(name)}">weer toestaan</button></td></tr>`).join("")}
+      </table></div>
+    </div>` : ""}`;
 }
 
 function settingsCategories() {
@@ -1239,6 +1290,13 @@ document.addEventListener("click", async (e) => {
     else if (b.dataset.addvacation) {
       await api("/api/vacations", { action: "add", name: $("#v-name").value, start: $("#v-start").value, end: $("#v-end").value });
       toast("Vakantieperiode toegevoegd"); await reload();
+    }
+    else if (b.dataset.home) {
+      const name = b.dataset.fromfield ? $("#home-name").value : b.dataset.place;
+      await api("/api/home", { action: b.dataset.home, name });
+      toast({ add: "Plaats toegevoegd aan je woongebied", remove: "Plaats verwijderd", never_learn: "Plaats wordt niet meer geleerd",
+        allow: "Plaats mag weer worden geleerd" }[b.dataset.home]);
+      await reload();
     }
     else if (b.dataset.delvacation) {
       await api("/api/vacations", { action: "delete", id: +b.dataset.delvacation });
@@ -1338,6 +1396,10 @@ document.addEventListener("change", async (e) => {
     else if (el.id === "f-flow") { f.flow = el.value; f.limit = 300; renderTx(); }
     else if (el.id === "f-fixed") { f.fixedOnly = el.checked; renderTx(); }
     else if (el.id === "f-label") { f.label = el.value; f.limit = 300; renderTx(); }
+    else if (el.id === "home-learn") {
+      await api("/api/home", { action: "set_learn", learn: el.checked });
+      toast(el.checked ? "Plaatsen worden automatisch bijgeleerd" : "Automatisch bijleren staat uit"); await reload();
+    }
     else if (el.id === "review-year") { S.reviewYear = el.value; renderTrends(); }
     else if (el.id === "sel-all") { (S.txList || []).forEach((t) => (el.checked ? S.sel.add(t.uid) : S.sel.delete(t.uid))); renderTx(); }
     else if (el.dataset.sel) { el.checked ? S.sel.add(el.dataset.sel) : S.sel.delete(el.dataset.sel); renderTx(); }
