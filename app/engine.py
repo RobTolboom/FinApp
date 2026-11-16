@@ -7,22 +7,31 @@ from datetime import date
 import rules as default_rules
 from parsers import _SPLIT2, _split_amex_desc
 
-# Bekende Nederlandse plaatsen: een pinbetaling hier telt nooit als vakantie,
-# ook als die plaats zelden in je transacties voorkomt. Daarnaast geldt elke
-# plaats die buiten je vakanties in minstens 3 verschillende maanden voorkomt
-# als 'thuis' (zie Categorizer.prepare).
-NL_CITIES = {
-    "AMSTERDAM", "ROTTERDAM", "DEN HAAG", "S-GRAVENHAGE", "UTRECHT", "EINDHOVEN", "GRONINGEN",
-    "TILBURG", "ALMERE", "BREDA", "NIJMEGEN", "NYMEGEN", "APELDOORN", "ARNHEM", "HAARLEM",
-    "HAARLEMMERMEER", "ENSCHEDE", "AMERSFOORT", "ZAANSTAD", "S-HERTOGENBOSCH", "S-HERTOGENBO",
-    "DEN BOSCH", "ZWOLLE", "LEIDEN", "LEEUWARDEN", "MAASTRICHT", "DORDRECHT", "EDE", "ALKMAAR",
-    "EMMEN", "DELFT", "VENLO", "DEVENTER", "HELMOND", "OSS", "HILVERSUM", "ASSEN", "HOOGEZAND",
-    "DRACHTEN", "HEERENVEEN", "SNEEK", "MEPPEL", "HOOGEVEEN", "WINSCHOTEN", "VEENDAM", "STADSKANAAL",
-    "DELFZIJL", "APPINGEDAM", "HAREN", "ZUIDLAREN", "ROLDE", "BEILEN", "ELST", "WIJCHEN", "MALDEN",
-    "LENT", "DUIVEN", "WESTERVOORT", "ZUTPHEN", "SCHIPHOL", "UDEN", "VEGHEL", "SCHIJNDEL", "SCHYNDEL",
-    "WAGENINGEN", "VALKENBURG", "BAD NIEUWESCH", "TEXEL", "DE COCKSDORP", "SCHIERMONNIKO",
-    "ZEVENHUIZEN G", "ADUARD", "EIBERGEN", "BARENDRECHT", "ZUIDWOLDE GN", "VEENINGEN", "HOUTEN",
-}
+HOME_MONTHS = 3     # zo veel verschillende maanden met een betaling maakt een plaats 'thuis'
+TRUNCATED_MIN = 8   # een afgekapte plaatsnaam telt pas vanaf deze lengte
+
+
+def normalize_place(name):
+    """Plaatsnaam zoals de bank hem schrijft: hoofdletters, geen apostrofs,
+    enkele spaties ('s-Gravenhage wordt S-GRAVENHAGE)."""
+    s = re.sub(r"['\u2018\u2019`\u00b4]", "", str(name or ""))
+    return " ".join(s.upper().split())
+
+
+def place_matches(city, places):
+    """Hoort de plaats uit een transactie bij een van de opgegeven plaatsen?
+    Naast een exacte naam telt een afgekapte naam (S-HERTOGENBO) en een naam
+    met een toevoeging na een spatie (zoals een provinciecode)."""
+    if not city:
+        return False
+    if city in places:
+        return True
+    for p in places:
+        if len(city) >= TRUNCATED_MIN and p.startswith(city):
+            return True
+        if city.startswith(p + " "):
+            return True
+    return False
 
 
 def _city(tx):
@@ -33,6 +42,7 @@ def _city(tx):
     head = re.split(r"[BG]EA Nr", desc)[0].strip()
     parts = _SPLIT2.split(head)
     return parts[1].strip().upper() if len(parts) >= 2 else ""
+
 
 # (dagen, label, ondergrens, bovengrens)
 PERIODS = [
@@ -54,7 +64,8 @@ def _d(s):
 # ---------------------------------------------------------------- categorieën
 
 class Categorizer:
-    def __init__(self, categories, tx_overrides, merchant_rules, own_ibans, own_names, vacations=()):
+    def __init__(self, categories, tx_overrides, merchant_rules, own_ibans, own_names, vacations=(),
+                 home_places=(), never_learn=(), home_learn=True):
         self.kind = {c["name"]: c["kind"] for c in categories}
         self.tx_overrides = tx_overrides
         self.merchant_rules = merchant_rules
@@ -63,7 +74,13 @@ class Categorizer:
         self.rules = [(re.compile(p, re.I), cat, opt) for p, cat, opt in default_rules.RULES]
         self.vacations = [(v["start"], v["end"], v["name"]) for v in vacations]
         self.travel_cat = "Reizen & vakantie" if "Reizen & vakantie" in self.kind else None
-        self.home_cities = set(NL_CITIES)
+        # woongebied: zelf toegevoegde plaatsen, aangevuld met wat prepare() leert
+        self.own_places = {normalize_place(p) for p in home_places} - {""}
+        self.never_learn = {normalize_place(p) for p in never_learn} - {""}
+        self.home_learn = bool(home_learn)
+        self.place_months = {}          # plaats -> aantal maanden met een betaling buiten vakanties
+        self.learned_places = set()
+        self.home_cities = set(self.own_places)
 
     def _in_vacation(self, d):
         for start, end, name in self.vacations:
@@ -72,18 +89,35 @@ class Categorizer:
         return None
 
     def prepare(self, txs):
-        """Leer welke plaatsen 'thuis' zijn: kaartbetalingen buiten vakanties
-        in minstens 3 verschillende maanden."""
+        """Leer welke plaatsen 'thuis' zijn: betalingen ter plaatse buiten
+        vakanties in minstens HOME_MONTHS verschillende maanden. Online
+        betalingen en Amex-betalingen in het buitenland tellen niet mee;
+        anders wordt de vestigingsplaats van een abonnement 'thuis'."""
         months = defaultdict(set)
         for t in txs:
-            if t["source"] == "bank" and t["tx_type"] != "pin":
+            if t["source"] == "bank":
+                if t["tx_type"] != "pin":
+                    continue
+            else:
+                country = (t.get("country") or "").strip().upper()
+                if country and not country.startswith("NETHERLANDS"):
+                    continue
+            if self.ONLINE.search(t["description"] or ""):
                 continue
             if self._in_vacation(t["date"]):
                 continue
-            c = _city(t)
+            c = normalize_place(_city(t))
             if c:
                 months[c].add(t["date"][:7])
-        self.home_cities |= {c for c, m in months.items() if len(m) >= 3}
+        self.place_months = {c: len(m) for c, m in months.items()}
+        self.learned_places = set()
+        if self.home_learn:
+            self.learned_places = {c for c, n in self.place_months.items()
+                                   if n >= HOME_MONTHS and not place_matches(c, self.never_learn)}
+        self.home_cities = self.own_places | self.learned_places
+
+    def is_home(self, city):
+        return place_matches(normalize_place(city), self.home_cities)
 
     # Categorieën die tijdens een vakantie naar 'Reizen & vakantie' gaan
     # (vaste lasten, abonnementen en overboekingen blijven onaangetast).
@@ -108,7 +142,7 @@ class Categorizer:
         if self.ONLINE.search(tx["description"] or ""):
             return None
         city = _city(tx)
-        if not city or city in self.home_cities:
+        if not city or self.is_home(city):
             return None
         return name
 

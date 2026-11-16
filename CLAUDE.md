@@ -153,7 +153,9 @@ internet.
   de volledige dataset aan de frontend; de frontend rekent verder zelf.
 - `app/engine.py`: `Categorizer` (regels, handmatige correcties,
   tegenpartij-regels, eigen rekeningen), herkenning van terugkerende lasten
-  en vakanties.
+  en vakanties. Het woongebied (plaatsen die bij een vakantie als thuis
+  gelden) bestaat uit geleerde en zelf toegevoegde plaatsen; er staan geen
+  plaatsnamen in de code.
 - `app/parsers.py`: CAMT.053 (XML, alle Nederlandse banken) en American
   Express CSV. `detect_and_parse` kiest op basis van bestandsinhoud.
 - `app/mortgage.py`: hypotheekdelen, rentewijzigingen, correcties.

@@ -103,6 +103,9 @@ def _migrate_1(c):
 # die op main staat nooit meer aan: databases die haar al hebben gehad, zien de wijziging niet.
 MIGRATIONS = [_migrate_1]
 
+HOME_NAME_MAX = 40      # tekens in een plaatsnaam van het woongebied
+HOME_LIST_MAX = 200     # plaatsen per lijst
+
 LABEL_COLORS = ["#3a6fb3", "#c46a24", "#2e8b57", "#8f3f71", "#b8860b", "#56a3a6", "#9d4b4b", "#6b6fb3"]
 
 
@@ -231,6 +234,9 @@ class Store:
         s.setdefault("closed_accounts", [])
         s.setdefault("mortgage_split", True)
         s.setdefault("mortgage_match", "HYPOTHE")
+        s.setdefault("home_learn", True)
+        s.setdefault("home_places", [])
+        s.setdefault("never_learn", [])
         return s
 
     def data(self):
@@ -254,8 +260,12 @@ class Store:
             m_rates = [dict(r) for r in c.execute("SELECT * FROM mortgage_rates ORDER BY date")]
             m_corr = [dict(r) for r in c.execute("SELECT * FROM mortgage_corrections ORDER BY date")]
         st = self.settings()
-        cz = engine.Categorizer(cats, tx_ov, m_rules, st["own_ibans"], st["own_names"], vacations)
+        cz = engine.Categorizer(cats, tx_ov, m_rules, st["own_ibans"], st["own_names"], vacations,
+                                st["home_places"], st["never_learn"], st["home_learn"])
         cz.prepare(txs)
+        home = {"learn": st["home_learn"], "places": sorted(cz.own_places), "never_learn": sorted(cz.never_learn),
+                "seen": [{"name": c, "months": n, "learned": c in cz.learned_places}
+                         for c, n in sorted(cz.place_months.items(), key=lambda x: (-x[1], x[0]))]}
         kind_of = {c["name"]: c["kind"] for c in cats}
         cat_of = {}
         for t in txs:
@@ -319,7 +329,7 @@ class Store:
             "recurring": recurring, "excluded_recurring": excluded,
             "imports": imports, "sources": sources, "end_date": end_date,
             "accounts": [accounts[k] for k in sorted(accounts)],
-            "db_path": str(self.path), "vacations": vacations,
+            "db_path": str(self.path), "vacations": vacations, "home": home,
             "labels": labels, "networth": self._networth(txs, balances, assets, vals),
             "mortgage": {"parts": mort["parts"], "monthly_balance": mort["monthly_balance"]},
         }
@@ -618,6 +628,44 @@ class Store:
                 c.execute("INSERT INTO vacations (name, start, end) VALUES (?,?,?)", (name, start, end))
         return {"ok": True}
 
+    def home(self, body):
+        """Woongebied beheren: plaatsen die bij vakanties als thuis gelden."""
+        act = body.get("action")
+        with self.lock:
+            if act == "set_learn":
+                changed = {"home_learn": bool(body.get("learn"))}
+            else:
+                name = engine.normalize_place(body.get("name"))
+                if not name:
+                    raise ValueError("Geef een plaatsnaam op")
+                if len(name) > HOME_NAME_MAX:
+                    raise ValueError("Een plaatsnaam is hooguit %d tekens" % HOME_NAME_MAX)
+                st = self.settings()
+                places = [engine.normalize_place(x) for x in st["home_places"]]
+                never = [engine.normalize_place(x) for x in st["never_learn"]]
+                # een plaats staat op hooguit één van de twee lijsten
+                if act == "add":
+                    target, other = places, never
+                elif act == "never_learn":
+                    target, other = never, places
+                elif act == "remove":
+                    target, other = None, places
+                elif act == "allow":
+                    target, other = None, never
+                else:
+                    raise ValueError("Onbekende actie")
+                if name in other:
+                    other.remove(name)
+                if target is not None and name not in target:
+                    if len(target) >= HOME_LIST_MAX:
+                        raise ValueError("Een lijst bevat hooguit %d plaatsen" % HOME_LIST_MAX)
+                    target.append(name)
+                changed = {"home_places": sorted(set(places)), "never_learn": sorted(set(never))}
+            with self.conn() as c:
+                for k, v in changed.items():
+                    c.execute("INSERT OR REPLACE INTO settings VALUES (?,?)", (k, json.dumps(v)))
+        return {"ok": True}
+
     def set_recurring(self, key, state):
         with self.lock, self.conn() as c:
             if state in ("yes", "no"):
@@ -802,6 +850,8 @@ def make_handler(store, port, lan=False, extra_hosts=(), auth=None):
                     return self._send(200, store.set_exclude(body["uid"], bool(body.get("exclude"))))
                 if path == "/api/vacations":
                     return self._send(200, store.vacation(body))
+                if path == "/api/home":
+                    return self._send(200, store.home(body))
                 if path == "/api/labels":
                     return self._send(200, store.label(body))
                 if path == "/api/tx_labels":
