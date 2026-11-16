@@ -253,13 +253,54 @@ def parse_camt053(data):
 
 # ---------------------------------------------------------------- Amex CSV
 
-def _nl_amount(s):
-    s = (s or "").strip().replace("€", "").replace(" ", "")
+_GROUPED_RE = re.compile(r"\d{1,3}(?:[.,]\d{3})+")
+
+
+def _amount(s):
+    """Bedrag als tekst naar centen, in Nederlandse ('1.234,56') of Engelse
+    ('1,234.56') notatie. Een scheidingsteken met drie cijfers erachter
+    scheidt duizendtallen, met één of twee cijfers de decimalen. Wat daar
+    niet in past wordt geweigerd in plaats van gegokt."""
+    raw = (s or "").strip()
+    s = raw.replace("€", "").replace(" ", "").replace(" ", "")
     if not s:
         return 0
-    if "," in s:
-        s = s.replace(".", "").replace(",", ".")
-    return int(round(float(s) * 100))
+    neg = s.startswith("-")
+    s = s.lstrip("+-")
+    whole, dec = s, ""
+    last = max(s.rfind("."), s.rfind(","))
+    if last >= 0:
+        sep = s[last]
+        other = "," if sep == "." else "."
+        tail = s[last + 1:]
+        # decimaalteken: komt één keer voor, met één of twee cijfers erachter
+        if s.count(sep) == 1 and len(tail) in (1, 2) and tail.isdigit():
+            whole, dec = s[:last], tail
+            if sep in whole or (other in whole and not _GROUPED_RE.fullmatch(whole)):
+                whole = ""
+        elif other in s or not _GROUPED_RE.fullmatch(s):
+            whole = ""
+    digits = whole.replace(".", "").replace(",", "")
+    if not digits.isdigit():
+        raise ImportFout("Bedrag '%s' is niet eenduidig te lezen; het bestand is niet geïmporteerd." % raw)
+    cents = int(digits) * 100 + int((dec + "00")[:2])
+    return -cents if neg else cents
+
+
+def _amex_date_format(values):
+    """Volgorde van dag en maand in datums met schuine strepen, afgeleid uit
+    het hele bestand: een waarde boven de 12 kan alleen een dag zijn. Zonder
+    zo'n waarde geldt maand/dag/jaar, zoals Amex Nederland exporteert."""
+    first_big = second_big = False
+    for v in values:
+        m = re.fullmatch(r"(\d{1,2})/(\d{1,2})/\d{4}", v)
+        if m:
+            first_big = first_big or int(m.group(1)) > 12
+            second_big = second_big or int(m.group(2)) > 12
+    if first_big and second_big:
+        raise ImportFout("De datums in dit CSV-bestand gebruiken dag/maand en maand/dag door elkaar; "
+                         "het bestand is niet geïmporteerd.")
+    return "%d/%m/%Y" if first_big else "%m/%d/%Y"
 
 
 def _split_amex_desc(desc):
@@ -281,17 +322,18 @@ def parse_amex_csv(data):
     if not need.issubset(fields):
         raise ImportFout("Onbekend CSV-formaat; verwacht een American Express-export "
                          "met de kolommen Datum, Omschrijving en Bedrag.")
+    rows = [row for row in reader if row.get("Datum")]
+    slash_format = _amex_date_format(row["Datum"].strip() for row in rows)
     txs = []
     seen = {}
-    for row in reader:
-        if not row.get("Datum"):
-            continue
+    for row in rows:
+        datum = row["Datum"].strip()
         try:
-            date = datetime.strptime(row["Datum"].strip(), "%m/%d/%Y").date().isoformat()
+            date = datetime.strptime(datum, slash_format if "/" in datum else "%d-%m-%Y").date().isoformat()
         except ValueError:
-            date = datetime.strptime(row["Datum"].strip(), "%d-%m-%Y").date().isoformat()
+            raise ImportFout("Datum '%s' is niet te lezen; het bestand is niet geïmporteerd." % datum)
         # Amex: positief = uitgave, negatief = betaling/creditering
-        cents = -_nl_amount(row.get("Bedrag"))
+        cents = -_amount(row.get("Bedrag"))
         desc = (row.get("Omschrijving") or "").strip()
         merchant, city = _split_amex_desc(desc)
         ref = (row.get("Referentie") or "").strip().strip("'\"")
