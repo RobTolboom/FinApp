@@ -5,6 +5,12 @@ importeert bankafschriften, FinApp categoriseert de transacties en laat zien
 waar je geld naartoe gaat. Alles draait op je eigen computer of NAS; er wordt
 niets naar internet verstuurd.
 
+![Het overzicht: vaste lasten, uitgaven per maand en gemiddelden per categorie](docs/img/overzicht.webp)
+
+![Vaste lasten: automatisch herkende posten per categorie, met bedrag per maand en per jaar](docs/img/vaste-lasten.webp)
+
+De schermafbeeldingen tonen verzonnen gegevens uit `tools/demo_data.py`.
+
 ## Wat kan het
 
 - Importeren van **CAMT.053-afschriften** (XML, exporteerbaar bij vrijwel elke
