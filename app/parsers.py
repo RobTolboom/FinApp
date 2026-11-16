@@ -110,6 +110,7 @@ _VL_CODES = {
 }
 
 _DD_RE = re.compile(r"DD:\s*(\d{4}-\d{2}-\d{2})")
+_ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def parse_camt053(data):
@@ -129,13 +130,42 @@ def parse_camt053(data):
         x = el.find(path, ns)
         return (x.text or "").strip() if x is not None and x.text else ""
 
+    def camt_date(el, path):
+        """Datum uit Dt, of het datumdeel van DtTm als de bank een tijdstip meelevert."""
+        d = t(el, path + "/c:Dt") or t(el, path + "/c:DtTm")[:10]
+        return d[:10] if _ISO_DATE_RE.match(d) else ""
+
+    def part_cents(det, entry_sign, entry_cents):
+        """Eigen bedrag in centen van één onderdeel van een verzamelboeking, met
+        het teken van de boeking. None als het onderdeel geen eigen bedrag in
+        euro heeft."""
+        el = det.find("c:AmtDtls/c:TxAmt/c:Amt", ns)
+        if el is None:
+            el = det.find("c:Amt", ns)
+        if el is None or (el.get("Ccy") or "EUR").upper() != "EUR":
+            return None
+        try:
+            c = int(round(float(el.text) * 100))
+        except (TypeError, ValueError):
+            return None
+        own_sign = t(det, "c:CdtDbtInd")
+        if own_sign and own_sign != entry_sign:
+            c = -c
+        return -c if entry_cents < 0 else c
+
     txs = []
     seen = {}
     for stmt in root.iter("{%s}Stmt" % ns["c"]):
         iban = t(stmt, "c:Acct/c:Id/c:IBAN")
         for ntry in stmt.findall("c:Ntry", ns):
-            if t(ntry, "c:Sts") not in ("", "BOOK"):
+            # Status staat in oudere versies direct in Sts, in nieuwere in Sts/Cd
+            if (t(ntry, "c:Sts/c:Cd") or t(ntry, "c:Sts")) not in ("", "BOOK"):
                 continue
+            amt_el = ntry.find("c:Amt", ns)
+            ccy = (amt_el.get("Ccy") or "").upper() if amt_el is not None else ""
+            if ccy and ccy != "EUR":
+                raise ImportFout("Rekening %s bevat boekingen in %s. FinApp rekent alleen in euro; "
+                                 "dit afschrift is niet geïmporteerd." % (iban or "zonder IBAN", ccy))
             amt = t(ntry, "c:Amt")
             cents = int(round(float(amt) * 100))
             sign = t(ntry, "c:CdtDbtInd")
@@ -143,61 +173,79 @@ def parse_camt053(data):
                 cents = -cents
             if t(ntry, "c:RvslInd") == "true":
                 cents = -cents
-            bookdate = t(ntry, "c:BookgDt/c:Dt") or t(ntry, "c:ValDt/c:Dt")
+            bookdate = camt_date(ntry, "c:BookgDt") or camt_date(ntry, "c:ValDt")
+            if not bookdate:
+                raise ImportFout("Een boeking op rekening %s heeft geen leesbare boekdatum; "
+                                 "dit afschrift is niet geïmporteerd." % (iban or "zonder IBAN"))
             code = t(ntry, "c:BkTxCd/c:Prtry/c:Cd") or t(ntry, "c:BkTxCd/c:Domn/c:Fmly/c:SubFmlyCd")
 
-            det = ntry.find("c:NtryDtls/c:TxDtls", ns)
-            e2e = t(det, "c:Refs/c:EndToEndId")
-            mndt = t(det, "c:Refs/c:MndtId")
-            if cents < 0:
-                name = t(det, "c:RltdPties/c:Cdtr/c:Nm")
-                cp_iban = t(det, "c:RltdPties/c:CdtrAcct/c:Id/c:IBAN")
-                cid = t(det, "c:RltdPties/c:Cdtr/c:Id/c:PrvtId/c:Othr/c:Id") or \
-                    t(det, "c:RltdPties/c:Cdtr/c:Id/c:OrgId/c:Othr/c:Id")
-            else:
-                name = t(det, "c:RltdPties/c:Dbtr/c:Nm") or t(det, "c:RltdPties/c:Cdtr/c:Nm")
-                cp_iban = t(det, "c:RltdPties/c:DbtrAcct/c:Id/c:IBAN")
-                cid = ""
-            rmt = t(det, "c:RmtInf/c:Ustrd") or t(ntry, "c:AddtlNtryInf")
+            # Verzamelboeking: elk onderdeel met een eigen bedrag wordt een eigen
+            # transactie, mits de onderdelen samen het boekingsbedrag vormen.
+            dets = ntry.findall("c:NtryDtls/c:TxDtls", ns)
+            parts = [(dets[0] if dets else None, cents)]
+            if len(dets) > 1:
+                amounts = [part_cents(d, sign, cents) for d in dets]
+                if None not in amounts and sum(amounts) == cents:
+                    parts = list(zip(dets, amounts))
 
-            # Werkelijke transactiedatum bij pinbetalingen
-            dd = _DD_RE.search(rmt)
-            date = dd.group(1) if dd else bookdate
-
-            tx_type = _VL_CODES.get(code, "")
-            if not tx_type:
-                if mndt:
-                    tx_type = "incasso"
-                elif "BEA Nr" in rmt:
-                    tx_type = "pin"
+            for det, cents in parts:
+                e2e = t(det, "c:Refs/c:EndToEndId")
+                mndt = t(det, "c:Refs/c:MndtId")
+                if cents < 0:
+                    name = t(det, "c:RltdPties/c:Cdtr/c:Nm")
+                    cp_iban = t(det, "c:RltdPties/c:CdtrAcct/c:Id/c:IBAN")
+                    cid = t(det, "c:RltdPties/c:Cdtr/c:Id/c:PrvtId/c:Othr/c:Id") or \
+                        t(det, "c:RltdPties/c:Cdtr/c:Id/c:OrgId/c:Othr/c:Id")
                 else:
-                    tx_type = "overboeking"
+                    name = t(det, "c:RltdPties/c:Dbtr/c:Nm") or t(det, "c:RltdPties/c:Cdtr/c:Nm")
+                    cp_iban = t(det, "c:RltdPties/c:DbtrAcct/c:Id/c:IBAN")
+                    cid = ""
+                rmt = t(det, "c:RmtInf/c:Ustrd") or t(ntry, "c:AddtlNtryInf")
+                # Gestructureerd betalingskenmerk alleen in de getoonde omschrijving:
+                # rmt zit in de hash voor de uid en moet daarom gelijk blijven.
+                ref = t(det, "c:RmtInf/c:Strd/c:CdtrRefInf/c:Ref")
+                description = rmt
+                if ref and ref not in rmt:
+                    description = ("%s  Betalingskenmerk %s" % (rmt, ref)).strip()
 
-            # Winkelsleutel
-            if mndt and cid:
-                key = "INC|%s|%s" % (cid, mndt)
-                display = name
-            else:
-                nm = card_merchant(name, rmt) or name
-                if _looks_like_code(nm) or not normalize_name(nm):
-                    # val terug op de omschrijving (bijv. 'www.ovpay.nl')
-                    for chunk in _SPLIT2.split(rmt.split("BEA Nr")[0]):
-                        if normalize_name(chunk) and not _looks_like_code(chunk):
-                            nm = chunk
-                            break
-                display = nm.strip()
-                key = normalize_name(nm) or (cp_iban or "ONBEKEND")
+                # Werkelijke transactiedatum bij pinbetalingen
+                dd = _DD_RE.search(rmt)
+                date = dd.group(1) if dd else bookdate
 
-            base = (iban, bookdate, cents, name, rmt, e2e)
-            k = _hash(*base)
-            seen[k] = seen.get(k, 0) + 1
-            uid = "bank:" + (k if seen[k] == 1 else _hash(k, seen[k]))
+                tx_type = _VL_CODES.get(code, "")
+                if not tx_type:
+                    if mndt:
+                        tx_type = "incasso"
+                    elif "BEA Nr" in rmt:
+                        tx_type = "pin"
+                    else:
+                        tx_type = "overboeking"
 
-            txs.append(_tx(
-                uid=uid, source="bank", account=iban, date=date, amount=cents,
-                counterparty=display, counterparty_iban=cp_iban, description=rmt,
-                tx_type=tx_type, creditor_id=cid, mandate_id=mndt, merchant_key=key,
-            ))
+                # Winkelsleutel
+                if mndt and cid:
+                    key = "INC|%s|%s" % (cid, mndt)
+                    display = name
+                else:
+                    nm = card_merchant(name, rmt) or name
+                    if _looks_like_code(nm) or not normalize_name(nm):
+                        # val terug op de omschrijving (bijv. 'www.ovpay.nl')
+                        for chunk in _SPLIT2.split(rmt.split("BEA Nr")[0]):
+                            if normalize_name(chunk) and not _looks_like_code(chunk):
+                                nm = chunk
+                                break
+                    display = nm.strip()
+                    key = normalize_name(nm) or (cp_iban or "ONBEKEND")
+
+                base = (iban, bookdate, cents, name, rmt, e2e)
+                k = _hash(*base)
+                seen[k] = seen.get(k, 0) + 1
+                uid = "bank:" + (k if seen[k] == 1 else _hash(k, seen[k]))
+
+                txs.append(_tx(
+                    uid=uid, source="bank", account=iban, date=date, amount=cents,
+                    counterparty=display, counterparty_iban=cp_iban, description=description,
+                    tx_type=tx_type, creditor_id=cid, mandate_id=mndt, merchant_key=key,
+                ))
     if not txs:
         raise ImportFout("Geen geboekte transacties gevonden in dit afschrift.")
     return txs
@@ -205,13 +253,54 @@ def parse_camt053(data):
 
 # ---------------------------------------------------------------- Amex CSV
 
-def _nl_amount(s):
-    s = (s or "").strip().replace("€", "").replace(" ", "")
+_GROUPED_RE = re.compile(r"\d{1,3}(?:[.,]\d{3})+")
+
+
+def _amount(s):
+    """Bedrag als tekst naar centen, in Nederlandse ('1.234,56') of Engelse
+    ('1,234.56') notatie. Een scheidingsteken met drie cijfers erachter
+    scheidt duizendtallen, met één of twee cijfers de decimalen. Wat daar
+    niet in past wordt geweigerd in plaats van gegokt."""
+    raw = (s or "").strip()
+    s = raw.replace("€", "").replace(" ", "").replace(" ", "")
     if not s:
         return 0
-    if "," in s:
-        s = s.replace(".", "").replace(",", ".")
-    return int(round(float(s) * 100))
+    neg = s.startswith("-")
+    s = s.lstrip("+-")
+    whole, dec = s, ""
+    last = max(s.rfind("."), s.rfind(","))
+    if last >= 0:
+        sep = s[last]
+        other = "," if sep == "." else "."
+        tail = s[last + 1:]
+        # decimaalteken: komt één keer voor, met één of twee cijfers erachter
+        if s.count(sep) == 1 and len(tail) in (1, 2) and tail.isdigit():
+            whole, dec = s[:last], tail
+            if sep in whole or (other in whole and not _GROUPED_RE.fullmatch(whole)):
+                whole = ""
+        elif other in s or not _GROUPED_RE.fullmatch(s):
+            whole = ""
+    digits = whole.replace(".", "").replace(",", "")
+    if not digits.isdigit():
+        raise ImportFout("Bedrag '%s' is niet eenduidig te lezen; het bestand is niet geïmporteerd." % raw)
+    cents = int(digits) * 100 + int((dec + "00")[:2])
+    return -cents if neg else cents
+
+
+def _amex_date_format(values):
+    """Volgorde van dag en maand in datums met schuine strepen, afgeleid uit
+    het hele bestand: een waarde boven de 12 kan alleen een dag zijn. Zonder
+    zo'n waarde geldt maand/dag/jaar, zoals Amex Nederland exporteert."""
+    first_big = second_big = False
+    for v in values:
+        m = re.fullmatch(r"(\d{1,2})/(\d{1,2})/\d{4}", v)
+        if m:
+            first_big = first_big or int(m.group(1)) > 12
+            second_big = second_big or int(m.group(2)) > 12
+    if first_big and second_big:
+        raise ImportFout("De datums in dit CSV-bestand gebruiken dag/maand en maand/dag door elkaar; "
+                         "het bestand is niet geïmporteerd.")
+    return "%d/%m/%Y" if first_big else "%m/%d/%Y"
 
 
 def _split_amex_desc(desc):
@@ -233,17 +322,18 @@ def parse_amex_csv(data):
     if not need.issubset(fields):
         raise ImportFout("Onbekend CSV-formaat; verwacht een American Express-export "
                          "met de kolommen Datum, Omschrijving en Bedrag.")
+    rows = [row for row in reader if row.get("Datum")]
+    slash_format = _amex_date_format(row["Datum"].strip() for row in rows)
     txs = []
     seen = {}
-    for row in reader:
-        if not row.get("Datum"):
-            continue
+    for row in rows:
+        datum = row["Datum"].strip()
         try:
-            date = datetime.strptime(row["Datum"].strip(), "%m/%d/%Y").date().isoformat()
+            date = datetime.strptime(datum, slash_format if "/" in datum else "%d-%m-%Y").date().isoformat()
         except ValueError:
-            date = datetime.strptime(row["Datum"].strip(), "%d-%m-%Y").date().isoformat()
+            raise ImportFout("Datum '%s' is niet te lezen; het bestand is niet geïmporteerd." % datum)
         # Amex: positief = uitgave, negatief = betaling/creditering
-        cents = -_nl_amount(row.get("Bedrag"))
+        cents = -_amount(row.get("Bedrag"))
         desc = (row.get("Omschrijving") or "").strip()
         merchant, city = _split_amex_desc(desc)
         ref = (row.get("Referentie") or "").strip().strip("'\"")

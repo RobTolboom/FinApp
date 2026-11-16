@@ -16,6 +16,7 @@ import json
 import re
 import os
 import sqlite3
+import stat
 import sys
 import threading
 import unicodedata
@@ -49,7 +50,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     uid TEXT PRIMARY KEY, source TEXT, account TEXT, date TEXT, amount INTEGER,
     counterparty TEXT, counterparty_iban TEXT, description TEXT, tx_type TEXT,
     creditor_id TEXT, mandate_id TEXT, cardholder TEXT, foreign_amt TEXT,
-    merchant_key TEXT, import_id INTEGER
+    merchant_key TEXT, import_id INTEGER, country TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_tx_date ON transactions(date);
 CREATE TABLE IF NOT EXISTS imports (
@@ -73,6 +74,37 @@ CREATE TABLE IF NOT EXISTS mortgage_parts (id INTEGER PRIMARY KEY AUTOINCREMENT,
 CREATE TABLE IF NOT EXISTS mortgage_rates (part_id INTEGER, date TEXT, rate REAL, PRIMARY KEY (part_id, date));
 CREATE TABLE IF NOT EXISTS mortgage_corrections (part_id INTEGER, date TEXT, balance INTEGER, PRIMARY KEY (part_id, date));
 """
+
+
+
+class DatabaseFout(Exception):
+    """De database kan niet worden geopend of omgezet; de tekst is bedoeld voor de gebruiker."""
+
+
+def _migrate_1(c):
+    """Wat de app tot versie 1 bij elke start deed."""
+    cols = {r[1] for r in c.execute("PRAGMA table_info(transactions)")}
+    if "country" not in cols:
+        c.execute("ALTER TABLE transactions ADD COLUMN country TEXT DEFAULT ''")
+    # plaatsnaam in het naamveld van kaartbetalingen herstellen
+    for r in c.execute("SELECT uid, counterparty, description FROM transactions "
+                       "WHERE source='bank' AND merchant_key NOT LIKE 'INC|%'").fetchall():
+        fixed = parsers.card_merchant(r["counterparty"], r["description"])
+        if fixed:
+            c.execute("UPDATE transactions SET counterparty=?, merchant_key=? WHERE uid=?",
+                      (fixed.strip(), parsers.normalize_name(fixed), r["uid"]))
+
+
+# Omzettingen van bestaande gegevens, op volgorde: functie n brengt de database van versie n-1
+# naar versie n (PRAGMA user_version). Elke functie draait één keer, in een transactie, nadat
+# er een back-up is gemaakt. SCHEMA is dan al toegepast, dus nieuwe tabellen bestaan al (leeg).
+# Een nieuwe tabel hoort in SCHEMA; een nieuwe kolom of een wijziging van bestaande gegevens is
+# een nieuwe functie hier, met de kolom ook in SCHEMA voor nieuwe databases. Pas een functie
+# die op main staat nooit meer aan: databases die haar al hebben gehad, zien de wijziging niet.
+MIGRATIONS = [_migrate_1]
+
+HOME_NAME_MAX = 40      # tekens in een plaatsnaam van het woongebied
+HOME_LIST_MAX = 200     # plaatsen per lijst
 
 LABEL_COLORS = ["#3a6fb3", "#c46a24", "#2e8b57", "#8f3f71", "#b8860b", "#56a3a6", "#9d4b4b", "#6b6fb3"]
 
@@ -108,19 +140,10 @@ class Store:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.lock = threading.Lock()
+        self.migrated_from = None       # versie van voor het omzetten, als er bij deze start is omgezet
+        self.backup_path = None
+        self._migrate()
         with self.conn() as c:
-            c.row_factory = sqlite3.Row
-            c.executescript(SCHEMA)
-            cols = {r[1] for r in c.execute("PRAGMA table_info(transactions)")}
-            if "country" not in cols:
-                c.execute("ALTER TABLE transactions ADD COLUMN country TEXT DEFAULT ''")
-            # plaatsnaam in het naamveld van kaartbetalingen herstellen
-            for r in c.execute("SELECT uid, counterparty, description FROM transactions "
-                               "WHERE source='bank' AND merchant_key NOT LIKE 'INC|%'").fetchall():
-                fixed = parsers.card_merchant(r["counterparty"], r["description"])
-                if fixed:
-                    c.execute("UPDATE transactions SET counterparty=?, merchant_key=? WHERE uid=?",
-                              (fixed.strip(), parsers.normalize_name(fixed), r["uid"]))
             for old, new in getattr(default_rules, "RENAMES", {}).items():
                 if c.execute("SELECT 1 FROM categories WHERE name=?", (old,)).fetchone():
                     c.execute("DELETE FROM categories WHERE name=?", (old,))
@@ -136,6 +159,72 @@ class Store:
         c.row_factory = sqlite3.Row
         return c
 
+    # ------------------------------------------------------------ schema
+    def _migrate(self):
+        """Brengt de database naar de versie van de code, met een back-up vooraf."""
+        latest = len(MIGRATIONS)
+        c = sqlite3.connect(str(self.path), isolation_level=None)    # transacties zelf afbakenen
+        c.row_factory = sqlite3.Row
+        try:
+            version = c.execute("PRAGMA user_version").fetchone()[0]
+            fresh = c.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone() is None
+            if version > latest:
+                raise DatabaseFout(
+                    "De database %s heeft versie %d, deze versie van FinApp kent versie %d. De database "
+                    "is door een nieuwere FinApp omgezet; werk de code bij." % (self.path, version, latest))
+            if fresh:
+                c.executescript(SCHEMA)
+                c.execute("PRAGMA user_version = %d" % latest)
+                return
+            if version < latest:
+                self.backup_path = self._backup(c, version)
+                self.migrated_from = version
+            c.executescript(SCHEMA)
+            for v in range(version + 1, latest + 1):
+                c.execute("BEGIN IMMEDIATE")
+                try:
+                    MIGRATIONS[v - 1](c)
+                    c.execute("PRAGMA user_version = %d" % v)
+                    c.execute("COMMIT")
+                except Exception as e:
+                    if c.in_transaction:
+                        c.execute("ROLLBACK")
+                    raise DatabaseFout(
+                        "Het omzetten van de database naar versie %d is mislukt (%s: %s). De database is "
+                        "niet gewijzigd en staat nog op versie %d. Back-up: %s"
+                        % (v, type(e).__name__, e, v - 1, self.backup_path)) from e
+        finally:
+            c.close()
+
+    def _backup(self, c, version):
+        """Kopie van de database naast het origineel; geeft het pad terug."""
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        target = self.path.with_name("%s.backup-v%d-%s.db" % (self.path.stem, version, stamp))
+        n = 1
+        while target.exists():
+            n += 1
+            target = self.path.with_name("%s.backup-v%d-%s-%d.db" % (self.path.stem, version, stamp, n))
+        try:
+            dst = sqlite3.connect(str(target))
+            try:
+                c.backup(dst)
+                ok = dst.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+            finally:
+                dst.close()
+            if not ok:
+                raise sqlite3.DatabaseError("de kopie is beschadigd")
+            os.chmod(str(target), stat.S_IMODE(os.stat(str(self.path)).st_mode))
+        except (sqlite3.Error, OSError) as e:
+            try:
+                target.unlink()         # geen halve kopie laten staan die op een back-up lijkt
+            except OSError:
+                pass
+            raise DatabaseFout(
+                "Er kon geen back-up van de database worden gemaakt (%s: %s), dus er is niets omgezet. "
+                "Controleer de schijfruimte en de schrijfrechten op %s."
+                % (type(e).__name__, e, self.path.parent)) from e
+        return target
+
     # ------------------------------------------------------------ lezen
     def settings(self):
         with self.conn() as c:
@@ -145,6 +234,9 @@ class Store:
         s.setdefault("closed_accounts", [])
         s.setdefault("mortgage_split", True)
         s.setdefault("mortgage_match", "HYPOTHE")
+        s.setdefault("home_learn", True)
+        s.setdefault("home_places", [])
+        s.setdefault("never_learn", [])
         return s
 
     def data(self):
@@ -168,8 +260,12 @@ class Store:
             m_rates = [dict(r) for r in c.execute("SELECT * FROM mortgage_rates ORDER BY date")]
             m_corr = [dict(r) for r in c.execute("SELECT * FROM mortgage_corrections ORDER BY date")]
         st = self.settings()
-        cz = engine.Categorizer(cats, tx_ov, m_rules, st["own_ibans"], st["own_names"], vacations)
+        cz = engine.Categorizer(cats, tx_ov, m_rules, st["own_ibans"], st["own_names"], vacations,
+                                st["home_places"], st["never_learn"], st["home_learn"])
         cz.prepare(txs)
+        home = {"learn": st["home_learn"], "places": sorted(cz.own_places), "never_learn": sorted(cz.never_learn),
+                "seen": [{"name": c, "months": n, "learned": c in cz.learned_places}
+                         for c, n in sorted(cz.place_months.items(), key=lambda x: (-x[1], x[0]))]}
         kind_of = {c["name"]: c["kind"] for c in cats}
         cat_of = {}
         for t in txs:
@@ -233,7 +329,7 @@ class Store:
             "recurring": recurring, "excluded_recurring": excluded,
             "imports": imports, "sources": sources, "end_date": end_date,
             "accounts": [accounts[k] for k in sorted(accounts)],
-            "db_path": str(self.path), "vacations": vacations,
+            "db_path": str(self.path), "vacations": vacations, "home": home,
             "labels": labels, "networth": self._networth(txs, balances, assets, vals),
             "mortgage": {"parts": mort["parts"], "monthly_balance": mort["monthly_balance"]},
         }
@@ -541,6 +637,44 @@ class Store:
                 c.execute("INSERT INTO vacations (name, start, end) VALUES (?,?,?)", (name, start, end))
         return {"ok": True}
 
+    def home(self, body):
+        """Woongebied beheren: plaatsen die bij vakanties als thuis gelden."""
+        act = body.get("action")
+        with self.lock:
+            if act == "set_learn":
+                changed = {"home_learn": bool(body.get("learn"))}
+            else:
+                name = engine.normalize_place(body.get("name"))
+                if not name:
+                    raise ValueError("Geef een plaatsnaam op")
+                if len(name) > HOME_NAME_MAX:
+                    raise ValueError("Een plaatsnaam is hooguit %d tekens" % HOME_NAME_MAX)
+                st = self.settings()
+                places = [engine.normalize_place(x) for x in st["home_places"]]
+                never = [engine.normalize_place(x) for x in st["never_learn"]]
+                # een plaats staat op hooguit één van de twee lijsten
+                if act == "add":
+                    target, other = places, never
+                elif act == "never_learn":
+                    target, other = never, places
+                elif act == "remove":
+                    target, other = None, places
+                elif act == "allow":
+                    target, other = None, never
+                else:
+                    raise ValueError("Onbekende actie")
+                if name in other:
+                    other.remove(name)
+                if target is not None and name not in target:
+                    if len(target) >= HOME_LIST_MAX:
+                        raise ValueError("Een lijst bevat hooguit %d plaatsen" % HOME_LIST_MAX)
+                    target.append(name)
+                changed = {"home_places": sorted(set(places)), "never_learn": sorted(set(never))}
+            with self.conn() as c:
+                for k, v in changed.items():
+                    c.execute("INSERT OR REPLACE INTO settings VALUES (?,?)", (k, json.dumps(v)))
+        return {"ok": True}
+
     def set_recurring(self, key, state):
         with self.lock, self.conn() as c:
             if state in ("yes", "no"):
@@ -725,6 +859,8 @@ def make_handler(store, port, lan=False, extra_hosts=(), auth=None):
                     return self._send(200, store.set_exclude(body["uid"], bool(body.get("exclude"))))
                 if path == "/api/vacations":
                     return self._send(200, store.vacation(body))
+                if path == "/api/home":
+                    return self._send(200, store.home(body))
                 if path == "/api/labels":
                     return self._send(200, store.label(body))
                 if path == "/api/tx_labels":
@@ -766,7 +902,13 @@ def main():
                  "Zet FINAPP_PASSWORD (gebruikersnaam via FINAPP_USER, standaard 'finapp').\n"
                  "Wil je bewust zonder wachtwoord draaien, zet dan FINAPP_NO_PASSWORD=1.")
 
-    store = Store(a.db)
+    try:
+        store = Store(a.db)
+    except DatabaseFout as e:
+        sys.exit("FinApp start niet: %s" % e)
+    if store.migrated_from is not None:
+        print("Database omgezet van versie %d naar %d." % (store.migrated_from, len(MIGRATIONS)))
+        print("Back-up van voor het omzetten: %s" % store.backup_path)
     port = int(os.environ.get("FINAPP_PORT") or a.port)
     for attempt in range(1 if lan else 10):
         try:
