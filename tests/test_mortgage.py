@@ -3,8 +3,11 @@
 Draaien vanuit de hoofdmap:
     python3 -m unittest discover -s tests
 """
+import itertools
 import os
+import random
 import sys
+import time
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app"))
@@ -287,6 +290,61 @@ class VerschovenIncasso(unittest.TestCase):
                    "2026-04": [100000, 50000]}, TWEE)
         self.assertEqual(r["2026-03"], [0])
         self.assertEqual(sorted(r["2026-02"]), [0, 30200, 30300])
+
+
+def assign_all(payments, terms):
+    """Vergelijkingsmaat voor _assign: rekent elke verdeling door, zonder iets over te slaan."""
+    k, n = len(payments), len(terms)
+    best, best_score = None, None
+    for choice in itertools.product(range(k + 1), repeat=n):
+        choice = choice[::-1]          # de eerste termijn wisselt het snelst
+        total = [0] * k
+        for i, c in enumerate(choice):
+            if c < k:
+                total[c] += terms[i][0]
+        used = set(c for c in choice if c < k)
+        if used and all(mortgage._fits(payments[j], total[j]) for j in used):
+            score = (len([c for c in choice if c < k]), -sum(abs(payments[j] - total[j]) for j in used))
+            if best_score is None or score > best_score:
+                best, best_score = choice, score
+    return [c if c < k else None for c in best] if best else [None] * n
+
+
+class Snelheid(unittest.TestCase):
+    """De verdeling slaat takken over die niets kunnen opleveren; de uitkomst blijft gelijk."""
+
+    def test_zelfde_uitkomst_als_alles_doorrekenen(self):
+        r = random.Random(7)
+        for _ in range(1500):
+            n, k = r.randrange(1, 7), r.randrange(1, 4)
+            terms = [(r.choice([10000, 25000, 25000, 40000, 61000, r.randrange(5000, 90000)]), 1)
+                     for _ in range(n)]
+            payments = []
+            for _ in range(k):
+                group = r.sample(terms, r.randrange(0, n + 1))
+                payments.append(max(1, sum(t[0] for t in group) + r.choice([0, 0, 300, -300, 7000]))
+                                if group else r.randrange(3000, 90000))
+            self.assertEqual(mortgage._assign(payments, terms), assign_all(payments, terms), (payments, terms))
+
+    def test_onthouden_uitkomst_is_een_kopie(self):
+        memo = {}
+        first = mortgage._assign([100000, 50000], [A, B, C], memo)
+        first[0] = "gewijzigd"
+        self.assertEqual(mortgage._assign([100000, 50000], [A, B, C], memo), [0, 0, 1])
+
+    def test_acht_leningdelen_twintig_jaar(self):
+        # twee geldverstrekkers met elk vier leningdelen en een maandelijkse premie
+        base = [61000, 47000, 83000, 29000, 55000, 38000, 72000, 44000]
+        payments, terms = {}, {}
+        for i in range(240):
+            month = "%04d-%02d" % (2005 + i // 12, i % 12 + 1)
+            terms[month] = [(b, b // 3 + i * 50) for b in base]
+            payments[month] = [sum(base[0::2]), sum(base[1::2]), 4500]
+        start = time.time()
+        r = mortgage.split_repayments(payments, terms)
+        self.assertLess(time.time() - start, 2.0)          # was ruim tien seconden
+        for month, ts in terms.items():
+            self.assertEqual(r[month], [sum(t[1] for t in ts[0::2]), sum(t[1] for t in ts[1::2]), 0])
 
 
 if __name__ == "__main__":

@@ -111,35 +111,57 @@ def _fits(amount, expected):
     return abs(amount - expected) <= max(FIT_MIN, FIT_RATIO * amount)
 
 
-def _assign(payments, terms):
+def _assign(payments, terms, memo=None):
     """Verdeelt termijnen (payment, repayment) over afschrijvingen zodat de
     bedragen passen. Geeft per termijn de index van haar afschrijving, of
-    None voor een termijn die nergens bij past."""
+    None voor een termijn die nergens bij past.
+
+    Van de verdelingen die passen wint die met de meeste toegewezen
+    termijnen, daarna die met het kleinste verschil. De termijnen worden één
+    voor één verdeeld; een tak vervalt zodra een afschrijving te vol raakt of
+    de beste verdeling tot dan toe niet meer te verbeteren is. 'memo' onthoudt
+    de uitkomst voor maanden met dezelfde bedragen."""
     k, n = len(payments), len(terms)
     none = [None] * n
     if not k or not n or (k + 1) ** n > MAX_COMBINATIONS:
         return none
-    best, best_score = None, None
-    choice = [0] * n          # per termijn: index van de afschrijving, k = niet toegewezen
-    while True:
-        total = [0] * k
-        for i, c in enumerate(choice):
-            if c < k:
-                total[c] += terms[i][0]
-        used = set(c for c in choice if c < k)
-        if used and all(_fits(payments[j], total[j]) for j in used):
-            score = (sum(1 for c in choice if c < k), -sum(abs(payments[j] - total[j]) for j in used))
-            if best_score is None or score > best_score:
-                best, best_score = list(choice), score
-        # volgende verdeling
-        i = 0
-        while i < n and choice[i] == k:
-            choice[i] = 0
-            i += 1
-        if i == n:
-            break
-        choice[i] += 1
-    return [c if c < k else None for c in best] if best else none
+    key = (tuple(payments), tuple(t[0] for t in terms))
+    if memo is not None and key in memo:
+        return list(memo[key])
+    margin = [max(FIT_MIN, FIT_RATIO * p) for p in payments]
+    total, count = [0] * k, [0] * k
+    choice = [k] * n          # per termijn: index van de afschrijving, k = niet toegewezen
+    found = [None, None]      # beste verdeling en haar score
+
+    def walk(i, assigned):
+        if i < 0:
+            used = [j for j in range(k) if count[j]]
+            if used and all(_fits(payments[j], total[j]) for j in used):
+                score = (assigned, -sum(abs(payments[j] - total[j]) for j in used))
+                if found[1] is None or score > found[1]:
+                    found[0], found[1] = list(choice), score
+            return
+        # ook met alle resterende termijnen erbij niet meer dan de beste
+        if found[1] is not None and assigned + i + 1 < found[1][0]:
+            return
+        amount = terms[i][0]
+        for c in range(k):
+            if total[c] + amount - payments[c] > margin[c]:
+                continue          # deze afschrijving zou te vol raken
+            total[c] += amount
+            count[c] += 1
+            choice[i] = c
+            walk(i - 1, assigned + 1)
+            total[c] -= amount
+            count[c] -= 1
+        choice[i] = k
+        walk(i - 1, assigned)
+
+    walk(n - 1, 0)
+    result = [c if c < k else None for c in found[0]] if found[0] else none
+    if memo is not None:
+        memo[key] = list(result)
+    return result
 
 
 def split_repayments(payments, terms):
@@ -163,12 +185,13 @@ def split_repayments(payments, terms):
     reps = {m: [0] * len(payments[m]) for m in months}
     free = {m: list(range(len(payments[m]))) for m in months}    # afschrijvingen zonder termijn
     left = {}                                                    # termijnen zonder afschrijving
+    memo = {}                                                    # verdelingen per combinatie van bedragen
 
     def place(m, items, target):
         """Koppelt termijnen aan de vrije afschrijvingen van maand 'target';
         geeft de termijnen terug die overblijven."""
         idx = free.get(target, [])
-        choice = _assign([payments[target][j] for j in idx], items)
+        choice = _assign([payments[target][j] for j in idx], items, memo)
         rest = []
         for item, c in zip(items, choice):
             if c is None:
