@@ -145,6 +145,13 @@ function coverageWarnings(r) {
    advies is maandelijks importeren en een creditcardafschrift kan een maand
    naijlen. */
 const STALE_DAYS = 45;
+/* Vandaag als JJJJ-MM-DD in de tijd van de gebruiker. toISOString() geeft de
+   datum in UTC, en die loopt in Nederland na middernacht een of twee uur achter. */
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 const dayDiff = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
 
 function accountLabel(a) {
@@ -160,7 +167,7 @@ function staleNotices() {
   if (!d.end_date || !open.length) return "";
   const out = [];
   const toImport = '<button class="link small" data-goto="import">Naar Importeren</button>';
-  if (dayDiff(d.end_date, new Date().toISOString().slice(0, 10)) > STALE_DAYS) {
+  if (dayDiff(d.end_date, localToday()) > STALE_DAYS) {
     out.push(`Je nieuwste gegevens zijn van ${fmtDate(d.end_date)}. Importeer de laatste periode om je overzicht actueel te houden. ${toImport}`);
   }
   for (const a of open) {
@@ -591,14 +598,14 @@ function monthEnd(k) {
 
 function renderNetworth() {
   const nw = S.data.networth || { accounts: [], assets: [] };
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const accts = nw.accounts || [], assets = nw.assets || [];
   const mbal = (S.data.mortgage || {}).monthly_balance || {};
   const hasMort = Object.keys(mbal).length > 0;
-  // maandreeks: vanaf het eerste bekende punt
+  // maandreeks: vanaf het eerste bekende punt van een rekening of vermogensonderdeel. Een
+  // onderdeel dat later begint, telt mee vanaf zijn eerste waarde.
   const starts = [...accts.map((a) => Object.keys(a.monthly)[0]), ...assets.filter((a) => a.valuations.length).map((a) => a.valuations[0].date.slice(0, 7))].filter(Boolean).sort();
-  const firstAll = [...accts.map((a) => Object.keys(a.monthly)[0]), ...(hasMort ? [Object.keys(mbal).sort()[0]] : []), ...assets.filter((a) => a.valuations.length).map((a) => a.valuations[0].date.slice(0, 7))].filter(Boolean).sort().pop();
-  const months = starts.length ? monthsBetween(firstAll, today.slice(0, 7)) : [];
+  const months = starts.length ? monthsBetween(starts[0], today.slice(0, 7)) : [];
   const series = months.map((k) => {
     const day = k === today.slice(0, 7) ? today : monthEnd(k);
     let assetsSum = 0, debt = 0;
@@ -634,7 +641,7 @@ function renderNetworth() {
         ${series.length > 1 ? lineChart(series) : `<p class="muted">${assets.length
           ? `Er is nog maar één meetpunt. Voer bij <em>bijwerken</em> ook een eerdere waarde in (bijvoorbeeld per 1 januari) voor elke post, dan verschijnt hier het verloop.`
           : "Voeg bezittingen en schulden toe om het verloop te zien."}</p>`}
-        <p class="muted" style="font-size:12px;margin:8px 0 0">Tussen twee waarderingen geldt steeds de laatst ingevoerde waarde. De grafiek begint bij de maand waarin alle posten een waarde hebben.
+        <p class="muted" style="font-size:12px;margin:8px 0 0">Tussen twee waarderingen geldt steeds de laatst ingevoerde waarde. De grafiek begint bij de eerste maand waarin een rekening of post een waarde heeft; een post die later begint, telt mee vanaf zijn eerste waarde.
           Het betaalrekeningsaldo is teruggerekend vanaf het laatste eindsaldo in je bankexport.</p>
       </div>
       <div>
@@ -688,7 +695,7 @@ function mortgagePanel() {
   const m = S.data.mortgage || { parts: [] };
   const st = S.data.settings || {};
   const parts = m.parts || [];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const tot = (f) => parts.reduce((a, p) => a + (p[f] || 0), 0);
   const edit = S.editPart ? parts.find((p) => p.id === S.editPart) : null;
   const form = (p) => `
