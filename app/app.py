@@ -15,6 +15,7 @@ import ipaddress
 import json
 import re
 import os
+import socketserver
 import sqlite3
 import stat
 import sys
@@ -496,7 +497,13 @@ class Store:
                     raise ValueError("Er bestaat al een label met deze naam")
                 return {"ok": True, "id": cur.lastrowid}
             if act == "rename":
-                c.execute("UPDATE labels SET name=? WHERE id=?", (body["name"].strip(), int(body["id"])))
+                name = (body.get("name") or "").strip()
+                if not name:
+                    raise ValueError("Geef het label een naam")
+                try:
+                    c.execute("UPDATE labels SET name=? WHERE id=?", (name, int(body["id"])))
+                except sqlite3.IntegrityError:
+                    raise ValueError("Er bestaat al een label met deze naam")
             elif act == "delete":
                 c.execute("DELETE FROM tx_labels WHERE label_id=?", (int(body["id"]),))
                 c.execute("DELETE FROM labels WHERE id=?", (int(body["id"]),))
@@ -743,6 +750,14 @@ def _cred(text):
     return unicodedata.normalize("NFC", text).encode("utf-8")
 
 
+class Server(ThreadingHTTPServer):
+    def server_bind(self):
+        # HTTPServer.server_bind zoekt de volledige hostnaam op (socket.getfqdn). Op sommige
+        # computers duurt dat tientallen seconden, en de app gebruikt de naam nergens.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 def make_handler(store, port, lan=False, extra_hosts=(), auth=None):
     """lan=False: alleen bereikbaar op deze computer (127.0.0.1).
     lan=True: ook vanaf het thuisnetwerk. Dan worden alleen verzoeken van
@@ -903,7 +918,7 @@ def main():
     port = int(os.environ.get("FINAPP_PORT") or a.port)
     for attempt in range(1 if lan else 10):
         try:
-            srv = ThreadingHTTPServer((a.host, port), make_handler(store, port, lan, extra_hosts, auth))
+            srv = Server((a.host, port), make_handler(store, port, lan, extra_hosts, auth))
             break
         except OSError:
             port += 1
