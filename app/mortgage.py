@@ -4,7 +4,8 @@ Een leningdeel heeft een hoofdsom, rente (% per jaar), looptijd in maanden,
 ingangsdatum en aflosvorm (annuitair, lineair of aflossingsvrij).
 Renteherzieningen gelden vanaf de maand van hun datum. Een correctie zet de
 restschuld op een bekende waarde (bijvoorbeeld uit het jaaroverzicht van de
-bank of na een extra aflossing); vanaf daar wordt verder gerekend.
+bank of na een extra aflossing); vanaf daar wordt verder gerekend. Een
+correctie in of vóór de maand van de ingangsdatum is de beginstand.
 
 Bedragen in centen. Maand = 'YYYY-MM'. De eerste termijn valt in de maand
 na de ingangsdatum.
@@ -20,18 +21,30 @@ def _add(key, n):
     return "%04d-%02d" % (y, m)
 
 
+def opening_balance(part, corrections=()):
+    """Restschuld bij de ingangsdatum: de hoofdsom, of de laatste correctie
+    in of vóór de startmaand."""
+    start = part["start"][:7]
+    early = [c for c in sorted(corrections, key=lambda c: c["date"]) if c["date"][:7] <= start]
+    return int(early[-1]["balance"]) if early else int(part["principal"])
+
+
 def schedule(part, rates=(), corrections=()):
-    """Geeft een lijst maanden met dict(month, interest, repayment, balance)."""
+    """Geeft een lijst maanden met dict(month, interest, repayment, extra,
+    balance). 'extra' is wat een correctie in die maand extra van de
+    restschuld afhaalt (negatief als de correctie de restschuld verhoogt)."""
     start = part["start"][:7]
     term = int(part["term_months"])
     kind = part["kind"]
-    bal = float(part["principal"])
+    bal = float(opening_balance(part, corrections))
     lin_step = bal / term if term else 0.0
     rate = float(part["rate"])
     rate_by_month = sorted(((r["date"][:7], float(r["rate"])) for r in rates))
     corr_by_month = {}
     for c in sorted(corrections, key=lambda c: c["date"]):
-        corr_by_month[c["date"][:7]] = float(c["balance"])
+        if c["date"][:7] > start:
+            corr_by_month[c["date"][:7]] = float(c["balance"])
+    last_corr = max(corr_by_month) if corr_by_month else ""
     out = []
     for n in range(1, term + 1):
         mk = _add(start, n)
@@ -49,23 +62,32 @@ def schedule(part, rates=(), corrections=()):
             pay = bal / remaining if i == 0 else bal * i / (1 - (1 + i) ** -remaining)
             repay = min(bal, pay - interest)
         bal -= repay
+        extra = 0.0
         if mk in corr_by_month:
             # correctie: bekende restschuld aan het eind van deze maand
+            extra = max(0.0, bal) - corr_by_month[mk]
             bal = corr_by_month[mk]
             if kind == "lineair":
                 lin_step = bal / max(1, term - n)
         out.append({"month": mk, "interest": int(round(interest)), "repayment": int(round(repay)),
-                    "balance": int(round(max(0.0, bal)))})
-        if bal <= 0.5 and kind != "aflossingsvrij":
+                    "extra": int(round(extra)), "balance": int(round(max(0.0, bal)))})
+        # afgelost: stoppen, tenzij een latere correctie de restschuld weer zet
+        if bal <= 0.5 and kind != "aflossingsvrij" and mk >= last_corr:
             break
-    # correcties in of voor de startmaand
+    # correcties na het einde van de looptijd: alleen de restschuld bijwerken
+    end = _add(start, term)
+    for mk in sorted(m for m in corr_by_month if m > end):
+        extra = max(0.0, bal) - corr_by_month[mk]
+        bal = corr_by_month[mk]
+        out.append({"month": mk, "interest": 0, "repayment": 0, "extra": int(round(extra)),
+                    "balance": int(round(max(0.0, bal)))})
     return out
 
 
-def balance_at(part, sched, month):
-    """Restschuld aan het eind van 'month' (hoofdsom vóór de eerste termijn)."""
+def balance_at(part, sched, month, corrections=()):
+    """Restschuld aan het eind van 'month' (beginstand vóór de eerste termijn)."""
     if month < _add(part["start"][:7], 1):
-        return int(part["principal"]) if month >= part["start"][:7] else None
+        return opening_balance(part, corrections) if month >= part["start"][:7] else None
     last = None
     for row in sched:
         if row["month"] <= month:
@@ -73,3 +95,131 @@ def balance_at(part, sched, month):
         else:
             break
     return last if last is not None else 0
+
+
+# ---------------------------------------------------------------- splitsing
+
+# Een afschrijving hoort bij leningdelen als het bedrag zo dicht bij hun
+# berekende termijn ligt: 2%, met een ondergrens van 5 euro.
+FIT_RATIO = 0.02
+FIT_MIN = 500
+# Bovengrens voor het aantal verdelingen dat per maand wordt doorgerekend.
+MAX_COMBINATIONS = 100000
+
+
+def _fits(amount, expected):
+    return abs(amount - expected) <= max(FIT_MIN, FIT_RATIO * amount)
+
+
+def _assign(payments, terms, memo=None):
+    """Verdeelt termijnen (payment, repayment) over afschrijvingen zodat de
+    bedragen passen. Geeft per termijn de index van haar afschrijving, of
+    None voor een termijn die nergens bij past.
+
+    Van de verdelingen die passen wint die met de meeste toegewezen
+    termijnen, daarna die met het kleinste verschil. De termijnen worden één
+    voor één verdeeld; een tak vervalt zodra een afschrijving te vol raakt of
+    de beste verdeling tot dan toe niet meer te verbeteren is. 'memo' onthoudt
+    de uitkomst voor maanden met dezelfde bedragen."""
+    k, n = len(payments), len(terms)
+    none = [None] * n
+    if not k or not n or (k + 1) ** n > MAX_COMBINATIONS:
+        return none
+    key = (tuple(payments), tuple(t[0] for t in terms))
+    if memo is not None and key in memo:
+        return list(memo[key])
+    margin = [max(FIT_MIN, FIT_RATIO * p) for p in payments]
+    total, count = [0] * k, [0] * k
+    choice = [k] * n          # per termijn: index van de afschrijving, k = niet toegewezen
+    found = [None, None]      # beste verdeling en haar score
+
+    def walk(i, assigned):
+        if i < 0:
+            used = [j for j in range(k) if count[j]]
+            if used and all(_fits(payments[j], total[j]) for j in used):
+                score = (assigned, -sum(abs(payments[j] - total[j]) for j in used))
+                if found[1] is None or score > found[1]:
+                    found[0], found[1] = list(choice), score
+            return
+        # ook met alle resterende termijnen erbij niet meer dan de beste
+        if found[1] is not None and assigned + i + 1 < found[1][0]:
+            return
+        amount = terms[i][0]
+        for c in range(k):
+            if total[c] + amount - payments[c] > margin[c]:
+                continue          # deze afschrijving zou te vol raken
+            total[c] += amount
+            count[c] += 1
+            choice[i] = c
+            walk(i - 1, assigned + 1)
+            total[c] -= amount
+            count[c] -= 1
+        choice[i] = k
+        walk(i - 1, assigned)
+
+    walk(n - 1, 0)
+    result = [c if c < k else None for c in found[0]] if found[0] else none
+    if memo is not None:
+        memo[key] = list(result)
+    return result
+
+
+def split_repayments(payments, terms):
+    """Bepaalt per hypotheekafschrijving hoeveel ervan aflossing is.
+
+    payments: {maand: [bedrag, ...]} met de afschrijvingen als positieve centen.
+    terms:    {maand: [(termijn, aflossing), ...]} per leningdeel volgens het schema.
+    Geeft {maand: [aflossing per afschrijving, ...]} in dezelfde volgorde.
+
+    1. Per maand krijgt elke afschrijving de aflossing van de leningdelen
+       waar haar bedrag bij past.
+    2. Een termijn die overblijft gaat naar een overgebleven afschrijving in
+       de volgende of vorige maand als het bedrag daar past (verschoven
+       incasso).
+    3. Wat dan nog overblijft wordt naar rato verdeeld over de overgebleven
+       afschrijvingen van dezelfde maand.
+    """
+    months = sorted(m for m in payments if payments[m])
+    if not months:
+        return {}
+    reps = {m: [0] * len(payments[m]) for m in months}
+    free = {m: list(range(len(payments[m]))) for m in months}    # afschrijvingen zonder termijn
+    left = {}                                                    # termijnen zonder afschrijving
+    memo = {}                                                    # verdelingen per combinatie van bedragen
+
+    def place(m, items, target):
+        """Koppelt termijnen aan de vrije afschrijvingen van maand 'target';
+        geeft de termijnen terug die overblijven."""
+        idx = free.get(target, [])
+        choice = _assign([payments[target][j] for j in idx], items, memo)
+        rest = []
+        for item, c in zip(items, choice):
+            if c is None:
+                rest.append(item)
+            else:
+                reps[target][idx[c]] += item[1]
+        free[target] = [j for n, j in enumerate(idx) if n not in set(c for c in choice if c is not None)]
+        return rest
+
+    m, last = _add(months[0], -1), _add(months[-1], 1)
+    span = []
+    while m <= last:
+        span.append(m)
+        m = _add(m, 1)
+    for m in span:
+        items = [t for t in terms.get(m, ()) if t[0] > 0]
+        left[m] = place(m, items, m) if items else []
+    for m in span:
+        for target in (_add(m, 1), _add(m, -1)):
+            if left[m] and free.get(target):
+                left[m] = place(m, left[m], target)
+    for m in months:
+        total = sum(t[1] for t in left[m])
+        paid = sum(payments[m][j] for j in free[m])
+        rest = total
+        for n, j in enumerate(free[m]):
+            r = rest if n == len(free[m]) - 1 else int(round(total * payments[m][j] / paid))
+            r = max(0, min(r, rest))
+            reps[m][j] += r
+            rest -= r
+    return {m: [max(0, min(r, p)) for r, p in zip(reps[m], payments[m])] for m in months}
