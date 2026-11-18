@@ -44,15 +44,17 @@ def _city(tx):
     return parts[1].strip().upper() if len(parts) >= 2 else ""
 
 
-# (dagen, label, ondergrens, bovengrens)
+# (dagen, label, ondergrens, bovengrens, keer per jaar)
+# De dagen dienen om de frequentie te herkennen. Het jaarbedrag volgt uit het
+# aantal keer per jaar, zodat twaalf maandtermijnen precies een jaar zijn.
 PERIODS = [
-    (7.0,    "Wekelijks",       5,   9),
-    (14.0,   "Tweewekelijks",   12,  17),
-    (30.44,  "Maandelijks",     25,  36),
-    (61.0,   "Tweemaandelijks", 54,  68),
-    (91.3,   "Per kwartaal",    80,  101),
-    (182.6,  "Halfjaarlijks",   160, 205),
-    (365.25, "Jaarlijks",       330, 400),
+    (7.0,    "Wekelijks",       5,   9,   365.25 / 7),
+    (14.0,   "Tweewekelijks",   12,  17,  365.25 / 14),
+    (30.44,  "Maandelijks",     25,  36,  12),
+    (61.0,   "Tweemaandelijks", 54,  68,  6),
+    (91.3,   "Per kwartaal",    80,  101, 4),
+    (182.6,  "Halfjaarlijks",   160, 205, 2),
+    (365.25, "Jaarlijks",       330, 400, 1),
 ]
 PERIOD_BY_LABEL = {p[1]: p for p in PERIODS}
 
@@ -223,7 +225,7 @@ def _detect(txs, is_incasso=False, forced=False):
         return p or min(PERIODS, key=lambda x: abs(x[0] - m))
     if not p:
         return None
-    days, label, lo, hi = p
+    days, label, lo, hi = p[:4]
     if days <= 101 and n < 3:
         return None
     # regelmaat: interval binnen bandbreedte, of een veelvoud (overgeslagen termijn)
@@ -320,8 +322,8 @@ def find_recurring(txs, cat_of, kind_of, overrides, end_date, closed=()):
             "period": label,
             "period_days": days,
             "amount": amount,
-            "monthly": int(round(amount * 30.44 / days)),
-            "yearly": int(round(amount * 365.25 / days)),
+            "monthly": int(round(amount * period[4] / 12)),
+            "yearly": int(round(amount * period[4])),
             "count": len(group),
             "first": group[0]["date"],
             "last": last["date"],
